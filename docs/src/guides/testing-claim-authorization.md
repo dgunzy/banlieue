@@ -243,12 +243,12 @@ make dev-oidc-k0s-grant
   cluster's address and CA plus a kubelogin user, and no admin credential:
 
   ```sh
-  EXPOSE=tailscale ./scripts/dev-oidc-k0s.sh kubeconfig > grill-oidc.yaml
+  EXPOSE=tailscale ./scripts/dev-oidc-k0s.sh kubeconfig > dev-oidc.yaml
   ```
 
   Copy it to the laptop, install kubelogin there
   (`brew install kubelogin`), and run
-  `KUBECONFIG=grill-oidc.yaml kubectl auth whoami`. Then grant from the
+  `KUBECONFIG=dev-oidc.yaml kubectl auth whoami`. Then grant from the
   workstation with `GRANT_USER=oidc:<login> make dev-oidc-k0s-grant`.
 
 `make dev-oidc-k0s-down` reverses all of it. It restores every controller's

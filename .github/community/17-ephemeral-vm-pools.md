@@ -285,6 +285,7 @@ provider can realise (see [Repo reality](#repo-reality-at-8360e19)).
 | D | libvirt provider: `LibvirtMachine` reconciler | 07 + 0050 + 0054 | ✅ complete — CRD, domain XML, reconciler, NoCloud user-data; roadmap 07 closed |
 | E | Proxmox provider, same | amend 12 | ⛔ |
 | F | Attestation trust anchors, threat model | 0049 | 📄 ADR-0049 written (Proposed); **no longer blocked** — A5 landed 2026-09-23, so the anchor exists on the claim. Remaining: `Provider.spec.attestation.ekTrustBundle` (per-backend — vCenter on vSphere, a per-host `swtpm_localca` on libvirt) and the in-guest agent |
+| G | Cloud Hypervisor backend, same | 09 + 0060–0065 | 🔶 **Prerequisites landed and verified live 2026-09-27** (roadmap 09): A2's `GuestReady` over vsock (the installed system runs `systemd-notify`, no extra package), A4's eject (`vm.remove-device`, and a per-machine installer copy deleted after it), A5's EK certificate read host-side where it was minted, A3 unchanged (controller-side), all through `make ch-deferred-e2e`. **Open:** a `VirtualMachinePool` with `readiness: GuestReady` reaching `Warm` on this class, and its warm-up time against vSphere's 130.3 s |
 
 Per `rules/architecture-driven-development.md` each ADR lands before its
 code. Skeleton decisions are below so the ADRs are an hour each, not a day.
@@ -690,6 +691,38 @@ with create-from-ISO. Rule to write down: **never clone a VM that has a
 problem again. `tpmstate0` v2.0 is added at create. `efidisk0` with
 `pre-enrolled-keys=0` only if UKI returns. `GuestReady` from the agent API;
 media detach is `ide2: none`; destroy with purge.
+
+### G: Cloud Hypervisor (amend roadmap 09)
+
+The host-resident provider (ADR-0060) realises a pool member as a
+`CloudHypervisorMachine`. What phases A and D needed from a backend, it
+has, each verified on a host on 2026-09-27:
+
+- **A2 `GuestReady`:** the installed system reports `phase=installed` over
+  vsock (ADR-0065 Decision 5); example 16's `boot` stage sends it with
+  `systemd-notify` on systemd 256 or later, and `socat` otherwise.
+  Published only for `Deferred` machines or a guest that reported, so an
+  `Immediate` image with no sender leaves the signal absent (ADR-0046
+  Decision 3) rather than holding a pool forever.
+- **A4 eject:** `vm.remove-device install` in the same pass as the report,
+  sticky `installMediaDetached`, every later start without it; the
+  machine's own installer copy is deleted after.
+- **A5 EK certificate:** read host-side from what `swtpm_setup` wrote,
+  never reported by the guest; its CA is on
+  `Provider.status.ekCaCertificates`, which is what phase F's
+  `ekTrustBundle` would carry for this class.
+- **No shared-vTPM problem:** every machine installs `Deferred` from an
+  empty disk and gets its own swtpm, manufactured once.
+
+To finish G:
+
+- [ ] A `VirtualMachinePool` of a `tpmEnabled`, `Deferred` class on a
+      Cloud Hypervisor `Provider`, `readiness: GuestReady`, reaches `Warm`;
+      claim, release and replacement work. Needs the controller deployed
+      where the host's provider reports.
+- [ ] Record the warm-up time next to vSphere's 130.3 s. The install is
+      most of it (341 s for one Kairos Hadron install in `make
+      ch-deferred-e2e`); roadmap 18 is the lever.
 
 ### F: Attestation anchors and threat model (ADR-0049)
 

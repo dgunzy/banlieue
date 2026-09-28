@@ -7,9 +7,9 @@ mod tests {
     use super::super::*;
     use std::path::Path;
 
-    /// Exactly what `scripts/bootstrap-cloud-hypervisor-host.sh` writes (its
-    /// `host` step, run in a Debian 13 container), comments included. If the
-    /// script's output changes shape, this test is where it shows.
+    /// Exactly what the shell bootstrap wrote before `banlieue host install`
+    /// replaced it (ADR-0067), comments included. Hosts prepared then still
+    /// carry this file, so it must keep loading.
     const FROM_BOOTSTRAP: &str = r#"# banlieue Cloud Hypervisor host configuration.
 # Written by scripts/bootstrap-cloud-hypervisor-host.sh.
 

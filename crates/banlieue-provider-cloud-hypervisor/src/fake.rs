@@ -117,6 +117,15 @@ impl FakeHost {
 
     /// The guest sends `phase=installed`. As on the real host, it is heard
     /// only while the provider is listening.
+    /// The provider process restarted (killed, or upgraded): what lived in
+    /// its memory is gone — its report listeners — and what is on the host
+    /// (units, VMs, taps, files) is not. The call log restarts too.
+    pub fn restart_provider(&self) {
+        let mut s = self.lock();
+        s.listening.clear();
+        s.calls.clear();
+    }
+
     pub fn guest_reports_installed(&self, plan: &MachinePlan) {
         let mut s = self.lock();
         if s.listening.contains(&plan.uid) {

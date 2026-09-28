@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The host-local configuration (ADR-0062 Decision 4).
 //!
-//! Written once by `scripts/bootstrap-cloud-hypervisor-host.sh`, read by the
-//! provider at start. It is the **only** source of host paths and bridge
+//! Written once by `banlieue host install` (ADR-0067, which renders it from
+//! this very type and parses it back), read by the provider at start. It is the **only** source of host paths and bridge
 //! names: machines name a storage or network *class*, and this file alone
 //! says what directory or bridge that class means on this host. A cluster
 //! credential that is stolen can therefore choose among what the host owner
@@ -14,7 +14,7 @@
 //! mistake here would otherwise surface much later as a guest that fails to
 //! start, or as one that starts somewhere it should not.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -43,7 +43,7 @@ pub enum HostConfigError {
 }
 
 /// The whole host config.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostConfig {
     /// Which `Provider` this host is.
@@ -55,11 +55,11 @@ pub struct HostConfig {
     /// The uid range guests run as (ADR-0063 Decision 3).
     pub guests: GuestsSection,
     /// swtpm, when this host offers a vTPM (ADR-0065). Absent means no vTPM.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tpm: Option<TpmSection>,
     /// Where `Url` images are pulled from (ADR-0064). Absent means this host
     /// serves `BackingFile` images only.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<RegistrySection>,
     /// Storage class name to directory.
     pub storage_classes: BTreeMap<String, PathBuf>,
@@ -68,7 +68,7 @@ pub struct HostConfig {
 }
 
 /// `[provider]`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSection {
     /// The `Provider` object's name. One Provider is one host (ADR-0060).
@@ -80,7 +80,7 @@ pub struct ProviderSection {
 }
 
 /// `[vmm]`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VmmSection {
     /// The `cloud-hypervisor` binary.
@@ -93,7 +93,7 @@ pub struct VmmSection {
 }
 
 /// `[paths]`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PathsSection {
     /// Per-guest sockets live under here (tmpfs).
@@ -103,7 +103,7 @@ pub struct PathsSection {
 }
 
 /// `[guests]`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestsSection {
     /// First uid a guest may run as.
@@ -121,7 +121,7 @@ impl GuestsSection {
 }
 
 /// `[tpm]`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TpmSection {
     /// `swtpm`.
@@ -135,7 +135,7 @@ pub struct TpmSection {
 }
 
 /// `[registry]`.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegistrySection {
     /// `registry/repository`, no tag or digest. The only repository this
@@ -145,7 +145,7 @@ pub struct RegistrySection {
     pub repository: String,
     /// Directory holding `username` and `password`. Absent pulls
     /// anonymously.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credentials_dir: Option<PathBuf>,
     /// Speak `http://`. Only for a registry on a private network or a test.
     #[serde(default)]

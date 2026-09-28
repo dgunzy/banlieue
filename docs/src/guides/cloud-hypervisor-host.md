@@ -35,10 +35,13 @@ provider is not root, and the credential can read no Secrets.
   AMD-V enabled in firmware. Nested virtualization is unsupported; `preflight`
   refuses a host that is itself a VM.
 - **systemd, D-Bus and polkit.** Guests are systemd units (ADR-0063).
-- **A Linux bridge** for guest networking. The script never creates one; see
+- **A Linux bridge** for guest networking. banlieue never creates one; see
   [Step 1](#step-1-a-bridge-for-guests).
 - **Root on the host**, directly or through `sudo`.
-- **Outbound HTTPS** to `github.com` to fetch the pinned VMM and firmware.
+- **Outbound HTTPS** to `github.com` to fetch the pinned VMM and firmware,
+  or the release assets in a local directory (`--artifacts-dir`).
+- **The `banlieue` binary.** It prepares the host (`banlieue host`, ADR-0067)
+  and then runs on it as the provider.
 
 ---
 
@@ -48,12 +51,9 @@ provider is not root, and the credential can read no Secrets.
 
     ```sh
     # 1. a bridge (once; see Step 1)
-    # 2. settings
-    ./scripts/bootstrap-cloud-hypervisor-host.sh --print-env-template \
-        > ~/.config/banlieue/hosts/bar.env      # then edit it
-    # 3. everything else
-    sudo BANLIEUE_ENV_FILE=~/.config/banlieue/hosts/bar.env \
-        ./scripts/bootstrap-cloud-hypervisor-host.sh all
+    # 2. everything else, from the binary the host will run
+    sudo banlieue host install --install-packages \
+        --provider-name bar --network-class default=br0
     ```
 
 === "From a workstation (remote host)"
@@ -64,15 +64,17 @@ provider is not root, and the credential can read no Secrets.
     # 2. settings, kept on the workstation
     ./scripts/bootstrap-cloud-hypervisor-host.sh --print-env-template \
         > ~/.config/banlieue/hosts/bar.env      # then edit it
-    # 3. copy, run under sudo on the host, clean up
+    # 3. copy the binary, run it under sudo on the host, clean up
+    BANLIEUE_BINARY=target/release/banlieue \
     BANLIEUE_ENV_FILE=~/.config/banlieue/hosts/bar.env \
       ./scripts/bootstrap-cloud-hypervisor-host.sh --remote admin@bar.foo.io all
     ```
 
-    `--remote` copies the script and the env file to a private temporary
-    directory on the host, runs the step there with `sudo` (it asks for your
-    password in the terminal), and removes both copies afterwards, whether the
-    step succeeded or not.
+    The script is a thin wrapper: `--remote` copies the binary to a private
+    temporary directory on the host, turns the env file into `banlieue host`
+    flags, runs `sudo banlieue host install --install-packages` there (it asks
+    for your password in the terminal), installs the same binary as the
+    provider, and removes the copy whether the step succeeded or not.
 
 **Never commit an env file.** It names real hosts. Keep it under
 `~/.config/banlieue/hosts/`, as the [host bootstrap](host-bootstrap.md#configuration-lives-outside-this-repository)
@@ -143,8 +145,8 @@ Pick one:
     If the host already runs libvirt (for example after
     [`bootstrap-libvirt-host.sh`](host-bootstrap.md)), its `virbr0` bridge
     works as it is: guests get a NAT address from libvirt's `dnsmasq`. With
-    `NETWORK_CLASSES` unset, the script uses `virbr0` as the `default` class
-    automatically.
+    no `--network-class`, `banlieue host` uses `virbr0` as the `default`
+    class automatically.
 
     Guests on a NAT bridge are reachable only from the host. That is fine for
     trying things out, and usually not what a pool of sandboxes wants.
@@ -159,21 +161,24 @@ ip -br link show type bridge
 
 ## Step 2: settings
 
-```sh
-./scripts/bootstrap-cloud-hypervisor-host.sh --print-env-template
-```
+Every setting is a flag, and each flag has a `BANLIEUE_HOST_*` environment
+variable, so a cloud-init payload needs no file of its own
+(`banlieue host install --help` lists them all):
 
-The settings that matter most:
-
-| Variable | Default | Meaning |
+| Flag | Default | Meaning |
 | --- | --- | --- |
-| `PROVIDER_NAME` | the host's short name | The `Provider` this host is. One `Provider` is one host (ADR-0060). |
-| `STORAGE_CLASSES` | `default=<largest mount>/banlieue/ch` | `name=path`, space-separated. Where guest disks and the image cache live. |
-| `NETWORK_CLASSES` | `default=virbr0` if it exists | `name=bridge`, space-separated. Each bridge must exist. |
-| `GUEST_UID_BASE`, `GUEST_UID_COUNT` | `2000000`, `10000` | One unprivileged uid per guest. Must not overlap real accounts or `/etc/subuid`. |
-| `CH_VERSION`, `CH_SHA256`, `CH_REMOTE_SHA256` | `v53.0`, pinned | The VMM banlieue's client is written against. |
-| `FIRMWARE_TAG`, `FIRMWARE_SHA256` | `ch-97eeb7b09`, pinned | `CLOUDHV.fd`, Cloud Hypervisor's edk2 build. |
-| `ALLOW_VIRTUALIZED_HOST` | `false` | Lab use only: run on a host that is itself a VM. |
+| `--provider-name` | the host's short name | The `Provider` this host is. One `Provider` is one host (ADR-0060). |
+| `--storage-class name=path` | `default=<roomiest of /srv, /data, /home, /opt, /var/lib>/banlieue/ch` | Where guest disks and the image cache live. Repeat, or comma-separate. |
+| `--network-class name=bridge` | `default=virbr0` if it exists | Each bridge must exist. Repeat, or comma-separate. |
+| `--guest-uid-base`, `--guest-uid-count` | `2000000`, `1024` | One unprivileged uid per guest. Must not overlap real accounts or `/etc/subuid`. |
+| `--registry-repository` | none | The one repository `Url` images are pulled from, by digest (ADR-0064). |
+| `--install-packages` | off | Install missing packages with `apt-get`; otherwise `packages` lists what is missing. |
+| `--artifacts-dir` | none (download) | Take `cloud-hypervisor-static`, `ch-remote-static` and `CLOUDHV.fd` from here, verified the same way. |
+| `--allow-virtualized-host` | off | Lab use only: run on a host that is itself a VM. |
+
+The VMM release and its digests are not settings: they are pinned in the
+binary, to the release its client is written against (ADR-0061, ADR-0067).
+Upgrading the VMM is upgrading banlieue.
 
 Storage and network classes are the only things a machine gets to choose.
 Machines name a class; the host alone knows the path or bridge behind it
@@ -185,24 +190,26 @@ what you declare here, and nothing else on the host.
 ## Step 3: run it
 
 ```sh
-sudo BANLIEUE_ENV_FILE=~/.config/banlieue/hosts/bar.env \
-  ./scripts/bootstrap-cloud-hypervisor-host.sh all
+sudo banlieue host install --install-packages --network-class default=br0
 ```
 
-Every step also runs on its own and is idempotent. Re-running is the intended
-way to change a setting.
+Every stage also runs on its own (`--only <stage>`, which refuses if a stage
+it builds on has not run), and a second `install` changes nothing.
+`--dry-run` prints what would change and changes nothing. Re-running is the
+intended way to change a setting.
 
-| Step | Does |
+| Stage | Does |
 | --- | --- |
-| `preflight` | Bare metal, `/dev/kvm`, the `kvm` group, x86_64, systemd, every declared bridge exists, the guest uid range is free. Changes nothing. |
-| `packages` | `swtpm`, `swtpm-tools`, `polkitd`, `dbus`, `iproute2`, `openssl`, `curl`. No QEMU, no libvirt. |
-| `vmm` | Downloads `cloud-hypervisor`, `ch-remote` and `CLOUDHV.fd`, checks each against its pinned sha256, and installs nothing on a mismatch. |
-| `host` | The `banlieue` system user, storage and run directories, and `/etc/banlieue/cloud-hypervisor.toml`. |
-| `tpm` | A per-host EK certificate authority for `swtpm_localca`, readable by `banlieue` only. |
-| `polkit` | A rule letting `banlieue` manage its own units and no others. |
-| `provider` | The provider's systemd unit. Enabled only once its binary and kubeconfig exist. |
-| `selftest` | The VMM runs, the firmware matches its pin, `banlieue` can open `/dev/kvm`, and a test vTPM gets an EK certificate with a `<name>:<uid>` CN. Boots nothing. |
-| `status` | Reports what is installed. Changes nothing. |
+| `preflight` | Bare metal, `/dev/kvm`, the `kvm` group, x86_64, systemd, every declared bridge exists, the guest uid range is free, NSS has its `systemd` module. Changes nothing (also `banlieue host preflight`). |
+| `packages` | `swtpm`, `swtpm-tools`, `polkitd`, `dbus`, `systemd`, `libnss-systemd`, `iproute2`, `ca-certificates`: verified, or installed with `--install-packages`. No QEMU, no libvirt. |
+| `vmm` | Downloads `cloud-hypervisor`, `ch-remote` and `CLOUDHV.fd`, checks each against its pinned sha256, and installs nothing, leaving the previous release as it was, on any mismatch. |
+| `host` | The `banlieue` system user, one userdb user and private group per guest uid, state, storage and run directories, and `/etc/banlieue/cloud-hypervisor.toml` (rendered from the provider's own config type and parsed back before it is written). |
+| `tpm` | A per-host EK certificate authority for `swtpm_localca`, created as `banlieue`, readable by `banlieue` only. |
+| `polkit` | A rule letting `banlieue` manage instances of its own templates, for uids in the guest range, and nothing else. |
+| `provider` | The four template units and the provider unit. The provider is enabled only once its binary and kubeconfig exist. |
+| `selftest` | The VMM runs, the firmware matches its pin, guest uids resolve, `banlieue` can open `/dev/kvm`, the provider's own host checks pass, and a test vTPM gets an EK certificate with a `<name>:<uid>` CN. Boots nothing (also `banlieue host selftest`). |
+
+`banlieue host status` reports what is installed and changes nothing.
 
 ### What ends up where
 
@@ -213,9 +220,12 @@ way to change a setting.
 | `/etc/banlieue/cloud-hypervisor.toml` | root:banlieue, 0640 | Host config: classes, paths, uid range, firmware |
 | `/etc/banlieue/swtpm/` | root, 0644 | `swtpm_setup` and `swtpm_localca` configuration |
 | `/var/lib/banlieue/swtpm-localca/` | banlieue, 0700 | The EK CA. Keys 0600; only `issuercert.pem` is 0644 |
-| `<storage class path>/` | banlieue, 0750 | Per-guest directories (0700, owned by the guest's uid) and `images/` |
-| `/run/banlieue/ch/` | banlieue, 0750 | Per-guest sockets, recreated at boot by `tmpfiles.d` |
+| `/var/lib/banlieue/` | banlieue, 0751 | Provider state: `ek/` and `units/` (0700), `tpm/` (0711, one guest-owned directory per guest) |
+| `/etc/userdb/` | root, 0644 files | One user and one private group per guest uid, for NSS |
+| `<storage class path>/` | banlieue, 0711 | Per-guest directories (2770, the guest's uid and banlieue's group) and `images/` (0750, banlieue only) |
+| `/run/banlieue/ch/` | banlieue, 0711 | Per-guest sockets, recreated at boot by `tmpfiles.d` |
 | `/etc/polkit-1/rules.d/60-banlieue-cloud-hypervisor.rules` | root, 0644 | Unit rule |
+| `/etc/systemd/system/banlieue-{ch,swtpm,swtpm-setup,ch-import}@.service` | root, 0644 | Template units the provider starts instances of |
 | `/etc/systemd/system/banlieue-provider-cloud-hypervisor.service` | root, 0644 | Provider unit |
 
 ### Why the EK CA key is `banlieue`-only
@@ -227,35 +237,42 @@ manufactured by a one-shot unit running as `banlieue`, never as the guest's
 uid: a guest uid that could read the key could mint certificates the host
 vouches for.
 
-!!! danger "`FORCE=true` rotates the EK CA"
-    `FORCE=true` regenerates the host config **and the EK CA**. Every EK
+!!! danger "`--force` rotates the EK CA"
+    `--force` regenerates the host config **and the EK CA**. Every EK
     certificate already issued on this host stops verifying. Don't use it to
-    change a setting. Edit the env file and re-run the step instead; the host
-    config is only rewritten if you delete it first.
+    change a setting: the host config is only rewritten if you delete it
+    first, or edit it by hand.
 
 ---
 
 ## Verifying
 
 ```sh
-sudo ./scripts/bootstrap-cloud-hypervisor-host.sh status
+sudo banlieue host status
 ```
 
 ```text
 --- host ---
-  Debian GNU/Linux 13 (trixie)  kernel 6.12.x  32 vCPU  virt=none
+  arch               x86_64
+  virtualization     none
+  systemd            running
 --- vmm ---
   cloud-hypervisor   cloud-hypervisor v53.0
-  firmware           /opt/banlieue/firmware/ch-97eeb7b09/CLOUDHV.fd
+  pinned             v53.0
+  firmware           present
   swtpm              TPM emulator version 0.7.1, ...
 --- config ---
-  host-config        /etc/banlieue/cloud-hypervisor.toml
+  host-config        present
   ek-ca              present
   polkit-rule        present
-  kubeconfig         absent (banlieue bootstrap)
+  kubeconfig         absent (banlieue bootstrap cloud-hypervisor-host)
 --- provider ---
   unit               inactive
+--- guests ---
 ```
+
+Without `sudo`, files in directories only `banlieue` can enter show as
+`unknown (run as root)` rather than missing.
 
 `provider: inactive` and `kubeconfig: absent` are expected until the provider
 ships.
@@ -400,6 +417,16 @@ kubectl get provider -n banlieue-system -o yaml   # status.failureDomains, statu
 kubectl get vmimage kairos-ubuntu-2404-ch -o jsonpath='{.status.perProvider}'
 ```
 
+The failure domain's `attributes.raw` also carries what the host has to
+give: `cpus`, `cpuModel`, `memoryMiB`, `hugepagesMiB` (reserved, so not
+free memory), `storageFreeGiB` per host storage class, and
+`nestedVirtualization: "false"`, which this class never offers.
+
+Upgrading the provider is replacing `/usr/local/bin/banlieue` and
+restarting `banlieue-provider-cloud-hypervisor`: guests are their own
+`banlieue-ch@` units and keep running, and the new process adopts them.
+`make ch-restart-e2e` checks exactly that on a host.
+
 ## Images from a registry (`Url` sources)
 
 A `BackingFile` source names a file you copied into a storage class's
@@ -425,8 +452,12 @@ registry, since the host cannot mount the cluster's artifacts volume
    the registry needs them:
 
     ```sh
-    sudo REGISTRY_REPOSITORY=registry.internal:5000/banlieue/disks \
-         scripts/bootstrap-cloud-hypervisor-host.sh host
+    # Regenerates the host config with the registry section. Repeat the
+    # storage and network classes you installed with: the file is rewritten
+    # from these flags. Only the host stage runs, so the EK CA is untouched.
+    sudo banlieue host install --only host --force \
+         --network-class default=br0 \
+         --registry-repository registry.internal:5000/banlieue/disks
     # only if the registry needs credentials:
     sudo install -m 0640 -o root -g banlieue /dev/stdin /etc/banlieue/registry/username <<<'robot'
     sudo install -m 0640 -o root -g banlieue /dev/stdin /etc/banlieue/registry/password <<<'…'
@@ -544,19 +575,23 @@ hand.
 
 ## Upgrading the VMM
 
-The versions are pinned because banlieue's client is written against one
-upstream API (ADR-0061). To move to a new release, set the new version **and
-its checksums** together, then re-run `vmm`:
+The VMM release is pinned in banlieue itself, to the release its client is
+written against (ADR-0061, ADR-0067): upgrading the VMM is upgrading
+banlieue. With the new binary in place:
 
 ```sh
-CH_VERSION=vNN.0 CH_SHA256=<sha256> CH_REMOTE_SHA256=<sha256> \
-  sudo -E ./scripts/bootstrap-cloud-hypervisor-host.sh vmm
+sudo banlieue host install --only vmm
 ```
 
-A version without matching checksums fails closed: it downloads, reports the
-mismatch, and installs nothing. Old versions stay under
-`/opt/banlieue/cloud-hypervisor/` until you remove them, so rolling back is
-re-running with the old values.
+It downloads the new release, verifies every artifact against its pinned
+sha256, and only then installs it and moves the `cloud-hypervisor` and
+`ch-remote` links. On any mismatch it installs nothing and leaves the links
+where they were. Old versions stay under `/opt/banlieue/cloud-hypervisor/`
+until you remove them, so rolling back is the previous banlieue binary's
+`install --only vmm`.
+
+Upgrading the provider itself is replacing `/usr/local/bin/banlieue` and
+restarting its unit; guests keep running (`make ch-restart-e2e`).
 
 ---
 
@@ -564,12 +599,12 @@ re-running with the old values.
 
 | Symptom | Cause |
 | --- | --- |
-| `running inside a VM (kvm)` in `preflight` | The host is a VM. Supported only for labs, with `ALLOW_VIRTUALIZED_HOST=true`. |
+| `running inside a VM (kvm)` in `preflight` | The host is a VM. Supported only for labs, with `--allow-virtualized-host`. |
 | `/dev/kvm missing` | VT-x/AMD-V disabled in firmware, or the `kvm_intel`/`kvm_amd` module is not loaded. |
 | `network class default -> br0: not a bridge on this host` | The bridge does not exist yet, or has a different name. See [Step 1](#step-1-a-bridge-for-guests). |
-| `NETWORK_CLASSES is empty and there is no virbr0` | No bridge was named and libvirt's isn't present. Create one and set `NETWORK_CLASSES`. |
-| `an account already uses a uid in ...` or `... overlaps guest uids` | Move `GUEST_UID_BASE` to a free range, clear of `/etc/subuid` and `/etc/subgid` (rootless containers). |
-| `checksum mismatch for ...` | The download is not the pinned artifact, or you changed a version without its checksums. Nothing was installed. |
-| `swtpm_setup failed as banlieue` in `selftest` | The EK CA directory has the wrong owner, often after copying `/var/lib/banlieue` by hand. Re-run `tpm`. |
+| `no network class, and no virbr0 bridge` | No bridge was named and libvirt's isn't present. Create one and pass `--network-class`. |
+| `account ... uses uid ..., inside the guest range` or `... overlaps guest uids` | Move `--guest-uid-base` to a free range, clear of `/etc/subuid` and `/etc/subgid` (rootless containers). |
+| `...: sha256 ..., pinned ...; nothing was installed` | The download (or the file in `--artifacts-dir`) is not the pinned artifact. Nothing was installed. |
+| `swtpm_setup as banlieue: ...` in `selftest` | The EK CA directory has the wrong owner, often after copying `/var/lib/banlieue` by hand. Re-run `install --only tpm`. |
 | `sudo: a terminal is required to read the password` with `--remote` | The workstation side ran without a terminal (piped, or from CI). Run it in an interactive terminal. |
 | Provider unit `inactive` | Expected until the provider binary and `/etc/banlieue/kubeconfig` exist. |

@@ -4,8 +4,9 @@ SPDX-License-Identifier: Apache-2.0
 -->
 # 0060 — Cloud Hypervisor is a first-class provider, host-resident, with `External` provider classes
 
-- **Status:** Proposed
-- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Date:** 2026-09-27
+- **Proposed:** 2026-09-25
 - **Deciders:** Erick Bourgeois
 - **Amends:** [ADR-0003](0003-provider-deployment-topology.md) (a `Provider`
   no longer always reconciles to a Deployment),
@@ -20,7 +21,8 @@ SPDX-License-Identifier: Apache-2.0
 
 > **Decision 1 is the maintainer's call (2026-09-25):** Cloud Hypervisor gets
 > first-class support as its own provider, not libvirt's `ch` driver. The
-> remaining decisions are proposed and await review.
+> remaining decisions were proposed the same day and accepted on
+> 2026-09-27, once each was implemented and verified on a host.
 
 ## Context
 

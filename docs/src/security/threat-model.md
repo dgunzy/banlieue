@@ -5,8 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 # Threat Model
 
 > **Status:** Living document. Last full pass **2026-09-27**, against the
-> architecture defined by **ADR-0001 … ADR-0065** (0057–0059 unallocated;
-> 0060–0065 Proposed). This pass covers the **host-resident Cloud Hypervisor
+> architecture defined by **ADR-0001 … ADR-0067** (0057–0059 unallocated,
+> 0066 reserved; 0060–0065 and 0067 Accepted 2026-09-27). The
+> 2026-09-27 pass for **ADR-0067** (`banlieue host`, the installer in the
+> binary) adds a component, an asset (A-14), an actor row, a trust boundary
+> (TB-11, with the §5 diagram), eight STRIDE rows and one accepted risk. This pass covers the **host-resident Cloud Hypervisor
 > provider** (ADR-0060 to ADR-0065), the first banlieue component that runs
 > **outside** the cluster, on the hypervisor host itself: **a new component,
 > a new actor (a compromised VMM), two new assets and two new trust
@@ -150,6 +153,7 @@ relationship to the host.
 | registry push Job | **None** — `automountServiceAccountToken: false` | `banlieue-imagebuild` | Pushes a `Ready` build to the operator's OCI registry for host-resident providers (ADR-0064); reads the artifacts PVC read-only and the push Secret, nothing else — `crates/banlieue-imagebuilder/src/reconciler/push.rs` |
 | image import unit (Cloud Hypervisor) | Host user `banlieue` | The host, as `banlieue-ch-import@<vmimage uid>.service` | Pulls one image by digest into the storage classes' image caches and exits; sandboxed, writable only in `images/` — `crates/banlieue-provider-cloud-hypervisor/src/vmimage.rs` (`import_unit`), `import.rs` |
 | kairos build pod | kairos-operator's SA | `banlieue-imagebuild` | **Privileged** — loop devices, mount, chroot |
+| `banlieue host` (installer) | **root**, once, at an operator's request; no cluster identity | A Cloud Hypervisor host, as a command, never a service | Installs the pinned VMM and firmware, the `banlieue` user, guest uid records, directories, the host config, the EK CA, the polkit rule and the units (ADR-0067). A separate crate no provider depends on — `crates/banlieue-host/` |
 
 ## 3. Assets
 
@@ -167,6 +171,7 @@ relationship to the host.
 | A-11 | **The Cloud Hypervisor provider's cluster credential** — a bound ServiceAccount token, renewed by the provider itself at half-life | `/etc/banlieue/credentials/token` on the host, beside a kubeconfig that only points at it; directory `0700 banlieue` (ADR-0060 Decision 5) | High — it is the provider's cluster identity: its own `Provider` and status, every `CloudHypervisorMachine` in the namespace, and **minting further tokens for itself**. **No Secret access** — the operator-built Role (`crates/banlieue-operator/src/workload.rs`) and `deploy/provider-cloud-hypervisor/rbac/clusterrole.yaml` — so it discloses no other credential |
 | A-12 | **Guest disks, seeds and API sockets on a Cloud Hypervisor host** | `<storage class>/<machine uid>/` (`os.raw`, `seed.iso`, `serial.log`, and `install.iso` while a `Deferred` installer is attached) and `/run/banlieue/ch/<guest uid>/api.sock`, each directory `2770 guest-uid:banlieue` | High — a guest's whole disk, its rendered user-data (A-2) in the seed, and control of its VMM. Encrypted at rest only for a `tpmEnabled` machine installed `Deferred` (ADR-0065), which seals to its own vTPM; otherwise plaintext, and ADR-0048 refuses `tpmEnabled` with an `Immediate` image |
 | A-13 | **Registry credentials** (ADR-0064) — push: a `kubernetes.io/basic-auth` Secret in `banlieue-imagebuild`; pull: `username`/`password` files in the host's `[registry] credentials_dir` (`0750 root:banlieue`) | Build namespace; each Cloud Hypervisor host | Push: **High** — combined with a `VMImage` status write, it chooses what hosts boot (TB-10). Pull: Medium — reads every pushed image, including cloud-config baked into it (A-2) |
+| A-14 | **What makes a Cloud Hypervisor host safe to run guests on** — the VMM and firmware, the template units, the polkit rule, the host config, the userdb records and directory modes | `/opt/banlieue/`, `/etc/systemd/system/`, `/etc/polkit-1/rules.d/`, `/etc/banlieue/`, `/etc/userdb/`, placed by `banlieue host install` (ADR-0067) | **Critical** — a tampered unit or polkit rule is root on the host, a tampered VMM runs every guest; integrity comes from the banlieue binary (A-5) and the sha256 pins compiled into it |
 | A-6 | vTPM identity and sealed disk-encryption keys | vSphere VM, per-clone (ADR-0039/0040); on libvirt, **swtpm state keyed by domain UUID** (ADR-0050); on Cloud Hypervisor, swtpm state in `<storage class>/<machine uid>/tpm/`, owned by the guest's uid, deleted with the machine (ADR-0065) | High — a shared or surviving TPM identity breaks per-VM disk-encryption isolation |
 | A-6a | **vTPM endorsement key certificate** — the public anchor an attestation quote is checked against | vCenter-issued and read host-side on vSphere; `swtpm_localca`-issued into the vTPM's NVRAM on libvirt, exported by the guest to `/run/banlieue/ek.pem` and mirrored to `VirtualMachineClaim.status` (ADR-0045); on Cloud Hypervisor, written by `swtpm_setup` at manufacture to `<state_root>/ek/<machine uid>/` (`0700 banlieue`) and read **host-side** (ADR-0065) | Low confidentiality — it is a **public key**, deliberately readable by every reader of the claim. Its value is *integrity of binding*: it must name the VM banlieue actually created, or ADR-0049 verifies a quote from the wrong machine |
 
@@ -183,6 +188,7 @@ relationship to the host.
 | **Compromised VMM** (Cloud Hypervisor) | A guest that has escaped into its VMM process: code execution as that guest's host uid, with `kvm` and write access to its own two directories | **Untrusted.** The unit's sandbox and the per-guest identity are what contain it (TB-9); the provider must never act on anything it can influence without checking |
 | **Stolen host credential** (Cloud Hypervisor) | Holds A-11 — the provider's ServiceAccount token — without the host | Untrusted; bounded by the provider's namespaced RBAC (TB-8) and the token's lifetime |
 | **OCI registry** and whoever operates it (ADR-0064) | Stores every pushed build; can read, withhold or delete one | **Untrusted for integrity** — hosts pull by digest and verify it, so the registry cannot substitute content. **Trusted for confidentiality and availability**: it sees every image in full (§7.13) |
+| **Host operator running `banlieue host install`** | Root on the host, for one command | Trusted, like the hypervisor operator; the installer's controls protect the host **from the provider's user** during that run, not from the operator |
 | External contributor | Opens a PR from a fork | Untrusted |
 | **OIDC identity provider** (and any bridge in front of it, e.g. Dex for GitHub) | Mints the ID tokens the API server accepts, and therefore **decides what `request.userInfo.username` is** | **Semi-trusted, and entirely outside banlieue's control.** Every guarantee the claim-subject policy makes is downstream of this actor: banlieue checks `subject.id` against a username it did not derive. Compromise or misconfiguration here makes every claim attribution meaningless — §8 |
 | Hypervisor operator | vCenter/libvirt privileges outside Kubernetes; root on a Cloud Hypervisor host | Semi-trusted — **can read datastores and storage pools banlieue writes to**, and on libvirt can read swtpm state on the host filesystem. On a Cloud Hypervisor host, root can read every guest's disk, seed and memory, and the provider's cluster token (A-11) |
@@ -241,6 +247,10 @@ relationship to the host.
   │              seccomp · Landlock · sandbox  ─ TB-9 ─  seccomp · Landlock      │
   │              <storage>/<A>/ 2770 A:banlieue   <storage>/<B>/ 2770 B:banlieue │
   │              tap A ─────────── host bridge ─────────── tap B                 │
+  │                                                                             │
+  │  banlieue host install (root, once) ──TB-11──▶ /opt, /etc, units, polkit,    │
+  │     ▲    acts in banlieue-owned dirs by O_NOFOLLOW handle   userdb, EK CA    │
+  │     └── upstream release assets, HTTPS, sha256-pinned in the binary          │
   └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -256,6 +266,7 @@ relationship to the host.
 | TB-8 | Cloud Hypervisor host ↔ cluster | A process on the hypervisor holds a cluster credential and acts on cluster state; cluster state tells a host what to run |
 | TB-9 | Guest VMM → host and other guests | Guest code that escapes into its VMM runs on the host, next to the provider and every other guest |
 | TB-10 | Build namespace → OCI registry → Cloud Hypervisor host | A build leaves the cluster for a registry the operator runs, and enters a host that cannot mount cluster storage (ADR-0064) |
+| TB-11 | Installer (root, once) → Cloud Hypervisor host | A root process writes the host's trust base (A-14), in part inside directories the provider's user owns, from artifacts downloaded from upstream (ADR-0067) |
 
 ## 6. Threats by boundary
 
@@ -471,6 +482,25 @@ registry.
 | The import process writes outside the image cache | T, E | Its own unit, an instance of the root-owned `banlieue-ch-import@.service`, as the provider's user: `ProtectSystem=strict`, `ReadWritePaths=` only the storage classes' `images/`, `ProtectHome`, `PrivateTmp`, `NoNewPrivileges`, `DevicePolicy=closed` with no devices — the template file, checked by `systemd_tests.rs`. Writes go through a temporary name and a rename; a copy into a second class is created `O_EXCL` (`sys.rs::clone_file`) |
 | Registry credentials leak | I | Push: a Secret in `banlieue-imagebuild`, mounted only into the push Job. Pull: files readable by `root:banlieue` only, never a cluster Secret, so ADR-0060's "no Secret reads" holds for the host (`host_config.rs`, bootstrap script) |
 
+### TB-11 — Installer (root, once) → Cloud Hypervisor host
+
+`banlieue host install` runs as root, at an operator's request, and places
+everything A-14 names. It is the one piece of banlieue that is root by
+design, so its controls are about two things: what it installs is what
+banlieue pinned, and a provider's user that was compromised earlier cannot
+use a later run as a lever.
+
+| Threat | STRIDE | Control |
+| --- | --- | --- |
+| A tampered or substituted VMM or firmware download | T | HTTPS only (rustls), and **sha256 pins compiled into the binary**: every artifact is fetched and verified before any is installed; on a mismatch nothing is written and the previous symlinks stay — `crates/banlieue-host/src/pins.rs`, `stages.rs::vmm`, tested (`a_pin_mismatch_installs_nothing`, `make ch-host-install-test` step 5) |
+| The installed VMM drifts from the release the client is written against | T | One pinned release: `pins_tests.rs` asserts the installer's version equals `spec/PIN` and the client's version gate |
+| The provider's user (compromised earlier) plants a symlink in a directory it owns — state root, EK CA directory, storage class — so the root installer chowns, chmods or writes another file | T, E | Every ownership and mode change acts on a handle opened `O_NOFOLLOW`; every write is a temporary file created `O_EXCL` beside its target and renamed over it; `mkdir` refuses anything but a directory — `real.rs`, tested with a planted symlink (`a_symlink_planted_where_a_directory_goes_is_refused`). Residual: §8 |
+| The installer weakens a directory another package owns (polkit's `rules.d` is `root:polkitd`) | T | Directories the OS or a package owns are created when missing and otherwise never re-moded or re-owned — `stages.rs::shared_dir`, tested; found by a dry run on a host |
+| A read-only verb changes a host | T | `preflight` and `status` take `ops::Probe`, which has no mutating methods; `selftest` removes its scratch directory; asserted in unit tests and in the container test (step 3) |
+| A reconcile path reaches root installer code, or its subprocesses | E | Crate boundary: no provider crate depends on `banlieue-host` (`boundary_tests.rs`); the subcommand is behind the binary's `host` feature |
+| A setting (flag, cloud-init environment) breaks out of the TOML or a unit file it is rendered into | T, E | Class names are `[a-z0-9-]`, values refuse whitespace and quotes; the host config is serialized from the provider's `HostConfig` and parsed back before it is written; a template placeholder left unfilled is an error — `settings.rs`, `render.rs`, tested |
+| A hostile server makes the installer buffer without bound | D | Downloads stop at `fetch.rs::MAX_ARTIFACT_BYTES` before the digest check |
+
 ## 7. Deployment hardening requirements
 
 These are properties of the **current** design that operators must enforce
@@ -609,11 +639,13 @@ a different assumption is unsafe.
       member as an annotation. Put an identifier there, never a token — the
       subject's credential belongs on the phase C attested channel, keyed to
       `status.nonce`.
-11. **Cloud Hypervisor hosts are part of the trust base; bootstrap them with
-    the script and keep them to it.** The provider on the host is only as
+11. **Cloud Hypervisor hosts are part of the trust base; prepare them with
+    `banlieue host install` and keep them to it.** The provider on the host is only as
     contained as the host configuration around it
     (`docs/src/guides/cloud-hypervisor-host-systemd.md`):
-    - Install with `scripts/bootstrap-cloud-hypervisor-host.sh`, which
+    - Install with `banlieue host install` from a banlieue binary you
+      verified (A-5: its signature and SBOM), since it is what places A-14
+      (ADR-0067; the script is now an SSH wrapper around it), which
       registers per-guest uids and private groups, sets `0711`/`2770`
       directories, and installs the polkit rule and the sandboxed provider
       unit. A host set up by hand without the userdb records cannot start
@@ -676,6 +708,7 @@ a different assumption is unsafe.
 | The imagebuilder's identity can **create Jobs in `banlieue-imagebuild`**, a privileged namespace, so its compromise is node-root-equivalent there | It already drove privileged builds through `OSArtifact`s; the push Job must run beside the PVC it reads. The Job it creates holds no API credential and no privilege | The push can run outside the privileged namespace (e.g. a restricted namespace with a read-only clone of the artifacts volume) |
 | Images in the registry can carry cloud-config (A-2), readable by the registry's operator | The registry is the operator's, like the datastore in TB-5; banlieue cannot encrypt what a host must boot without a key-distribution scheme it does not have | Per-VM secrets move entirely out of shared images, or images are encrypted for their hosts |
 | The Cloud Hypervisor API decoder (`banlieue-cloud-hypervisor`) is **not fuzzed** | The peer is a local VMM the provider started, not a network endpoint; decoding is into typed, bounded structs and failure is reported, not fatal. The libvirt decoder is fuzzed because its peer is remote | A fuzz target is added alongside the libvirt one, or the client ever talks to a VMM it did not start |
+| The installer's `O_NOFOLLOW` protects only a path's **last component**: a directory the provider's user owns could be swapped for a symlink between the installer's check and its use, one level up | The window is one run of a root command started by an operator; the directories are created (and a symlink there refused) earlier in the same run; `openat2(RESOLVE_NO_SYMLINKS)` would forbid legitimate symlinks on the path, such as a storage class under a linked mount | A host where the provider's user is untrusted while an install runs; then resolve beneath each banlieue-owned root with `openat2(RESOLVE_BENEATH)` |
 | Health endpoint binds `0.0.0.0` and returns a fixed `200` | Standard probe trade-off; carries no data | It ever reports real state |
 | Provider condition messages are mirrored verbatim onto user-facing `VirtualMachine` status | Useful diagnostics; providers are in-tree | A third-party provider ships |
 
@@ -688,6 +721,9 @@ a different assumption is unsafe.
   the bootstrap material.
 - `deploy/kind/` — development-only, not held to production standard.
 - The MkDocs documentation toolchain (`docs/`), which ships nothing at runtime.
+- Removing banlieue from a Cloud Hypervisor host (`uninstall`, host drain):
+  not built (ADR-0067 Decision 8); `banlieue host status` shows what a
+  manual removal must cover.
 
 ## 10. Maintenance
 

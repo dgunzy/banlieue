@@ -41,6 +41,11 @@ pub const TARGET_KEY_HOST_CLASS: &str = "hostClass";
 const FEATURE_VTPM: &str = "vtpm";
 /// The KVM device.
 const DEV_KVM: &str = "/dev/kvm";
+/// Where the host's CPUs and memory are read from.
+const PROC_CPUINFO: &str = "/proc/cpuinfo";
+const PROC_MEMINFO: &str = "/proc/meminfo";
+const KIB_PER_MIB: u64 = 1024;
+const BYTES_PER_GIB: u64 = 1024 * 1024 * 1024;
 
 /// Condition types on `Provider.status`.
 pub mod condition_types {
@@ -81,6 +86,87 @@ pub struct HostFacts {
     pub vtpm: bool,
     /// The host's EK CA certificate (PEM), when it parses as one.
     pub ek_ca_pem: Option<String>,
+    /// What the host has to give guests.
+    pub capacity: HostCapacity,
+}
+
+/// The host's capacity, as published on its failure domain. Each figure is
+/// `None` (left out of status) when the host would not give it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HostCapacity {
+    /// Logical CPUs.
+    pub cpus: Option<u32>,
+    /// The CPU model, as `/proc/cpuinfo` names it.
+    pub cpu_model: Option<String>,
+    /// Physical memory, MiB.
+    pub memory_mib: Option<u64>,
+    /// Memory reserved as hugepages, MiB. Reserved, not allocated on demand,
+    /// so it is its own figure: a scheduler that counts it as free memory
+    /// overcommits a host that looks half empty.
+    pub hugepages_mib: Option<u64>,
+    /// Free space for guests' disks, GiB, by host storage class.
+    pub storage_free_gib: BTreeMap<String, u64>,
+}
+
+/// Logical CPU count and the first CPU's model from `/proc/cpuinfo` text.
+#[must_use]
+pub fn parse_cpuinfo(text: &str) -> (Option<u32>, Option<String>) {
+    let field = |l: &str, key: &str| {
+        let (k, v) = l.split_once(':')?;
+        (k.trim() == key).then(|| v.trim().to_string())
+    };
+    let count = text
+        .lines()
+        .filter(|l| field(l, "processor").is_some())
+        .count();
+    let model = text.lines().find_map(|l| field(l, "model name"));
+    (u32::try_from(count).ok().filter(|n| *n > 0), model)
+}
+
+/// Total memory and reserved hugepages, both MiB, from `/proc/meminfo` text.
+#[must_use]
+pub fn parse_meminfo(text: &str) -> (Option<u64>, Option<u64>) {
+    let value = |key: &str| {
+        text.lines().find_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            if k.trim() != key {
+                return None;
+            }
+            v.split_whitespace().next()?.parse::<u64>().ok()
+        })
+    };
+    let memory = value("MemTotal").map(|kib| kib / KIB_PER_MIB);
+    let hugepages = value("HugePages_Total")
+        .zip(value("Hugepagesize"))
+        .map(|(count, page_kib)| count * page_kib / KIB_PER_MIB);
+    (memory, hugepages)
+}
+
+/// Free space on the filesystem holding `dir`, GiB, for an unprivileged
+/// writer (`f_bavail`).
+fn free_gib(dir: &Path) -> Option<u64> {
+    let st = rustix::fs::statvfs(dir).ok()?;
+    Some(st.f_bavail.saturating_mul(st.f_frsize) / BYTES_PER_GIB)
+}
+
+fn gather_capacity(config: &HostConfig) -> HostCapacity {
+    let (cpus, cpu_model) = std::fs::read_to_string(PROC_CPUINFO)
+        .map(|t| parse_cpuinfo(&t))
+        .unwrap_or_default();
+    let (memory_mib, hugepages_mib) = std::fs::read_to_string(PROC_MEMINFO)
+        .map(|t| parse_meminfo(&t))
+        .unwrap_or_default();
+    HostCapacity {
+        cpus,
+        cpu_model,
+        memory_mib,
+        hugepages_mib,
+        storage_free_gib: config
+            .storage_classes
+            .iter()
+            .filter_map(|(n, p)| Some((n.clone(), free_gib(p)?)))
+            .collect(),
+    }
 }
 
 /// Look at the host. Existence checks only; nothing is created.
@@ -117,6 +203,7 @@ pub fn gather_facts(config: &HostConfig) -> HostFacts {
             .as_ref()
             .and_then(|t| std::fs::read_to_string(&t.ek_ca_certificate).ok())
             .and_then(|text| banlieue_provider_sdk::ek::parse_ek_pem_str(&text)),
+        capacity: gather_capacity(config),
     }
 }
 
@@ -124,6 +211,32 @@ fn host_class(target: Option<&BTreeMap<String, String>>) -> Option<&str> {
     target
         .and_then(|t| t.get(TARGET_KEY_HOST_CLASS))
         .map(String::as_str)
+}
+
+/// Publish the host's capacity; a figure it would not give is left out.
+fn insert_capacity(raw: &mut BTreeMap<String, String>, c: &HostCapacity) {
+    let figures = [
+        ("cpus", c.cpus.map(|v| v.to_string())),
+        ("cpuModel", c.cpu_model.clone()),
+        ("memoryMiB", c.memory_mib.map(|v| v.to_string())),
+        ("hugepagesMiB", c.hugepages_mib.map(|v| v.to_string())),
+    ];
+    for (key, value) in figures {
+        if let Some(v) = value {
+            raw.insert(key.to_string(), v);
+        }
+    }
+    if !c.storage_free_gib.is_empty() {
+        let free: Vec<String> = c
+            .storage_free_gib
+            .iter()
+            .map(|(class, gib)| format!("{class}={gib}"))
+            .collect();
+        raw.insert("storageFreeGiB".to_string(), free.join(","));
+    }
+    // This class never offers nested virtualization, whatever the CPU can
+    // do: the VMM is always started with `nested=off` (ADR-0061).
+    raw.insert("nestedVirtualization".to_string(), "false".to_string());
 }
 
 /// The `Provider` status for this host.
@@ -169,6 +282,7 @@ pub fn compute_status(
         "hostNetworkClasses".to_string(),
         config.network_class_names().join(","),
     );
+    insert_capacity(&mut raw, &facts.capacity);
 
     let fd = FailureDomain {
         name,

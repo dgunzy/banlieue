@@ -1,5 +1,140 @@
 # Changelog
 
+## [2026-09-27 19:30] - `banlieue host`: prepare a Cloud Hypervisor host from the binary (ADR-0067); roadmap 09 done
+
+**Author:** Erick Bourgeois
+
+### Added
+- `docs/adr/0067-banlieue-host-install-subcommand.md` (**Accepted**
+  2026-09-27): the CLI
+  contract, stages and prerequisites, the crate boundary, one pinned
+  release, how files are written, settings, what stays out of the binary,
+  and roadmap 09's open questions answered (no uninstall yet; Debian-family
+  packages; `bootstrap` for a cluster, `host` for a machine).
+- `crates/banlieue-host` (new crate, no new dependency): `banlieue host
+  {preflight,status,selftest,install}` behind the binary's `host` feature
+  (default on). Stages `packages`, `vmm`, `host`, `tpm`, `polkit`,
+  `provider`, `selftest`; `--only`, `--dry-run`, `--install-packages`,
+  `--force`, `--artifacts-dir`, `--provider-binary`; every setting a flag
+  with a `BANLIEUE_HOST_*` variable.
+  - `ops.rs`: `Probe` (read-only; `preflight` and `status` take only this)
+    and `Host`; `real.rs` does every ownership and mode change through an
+    `O_NOFOLLOW` handle and every write through an `O_EXCL` temporary and a
+    rename, so the provider's user cannot turn a root re-run against another
+    file; `fake.rs` is as strict, and simulates useradd, apt-get,
+    swtpm_setup (including the CA serial) and systemctl.
+  - `pins.rs`: the VMM, `ch-remote` and firmware digests; a test ties the
+    version to `spec/PIN` and the client's version gate. Every artifact is
+    verified before any is installed.
+  - `render.rs`: the templates in `deploy/provider-cloud-hypervisor/host/`,
+    compiled in, a leftover placeholder an error; the host config rendered
+    from the provider's own `HostConfig` and parsed back.
+  - `selftest` uses the provider's `gather_facts` and manufactures a vTPM,
+    checking its EK CN (fixture `src/fixtures/ek-rsa2048-selftest.der`, a
+    throwaway CA's certificate).
+  - 39 unit tests: fail-closed pins, idempotence as equality, read-only
+    verbs, `--only` prerequisites, provider unit enabled only when runnable,
+    planted symlinks, package-owned directories left alone, dry run.
+- `scripts/test-ch-host-install.sh`, `make ch-host-install-test`: the
+  install as root in a Debian 13 container with the real downloads.
+  **Passes.** It found two bugs: the TLS client was built before
+  `ca-certificates` existed (now built on first download), and the
+  self-test advances the EK CA's serial (modelled in the fake, excluded
+  from equality, documented).
+
+### Changed
+- `scripts/bootstrap-cloud-hypervisor-host.sh`: now a thin wrapper that
+  keeps its steps, `--remote` and env file, translated to `banlieue host`
+  flags; the pins moved into the binary.
+- `crates/banlieue-provider-cloud-hypervisor/src/host_config.rs`:
+  `Serialize` on the config types (skipping absent sections), so the
+  installer writes what the provider reads.
+- `crates/banlieue/`: `host` feature and `Command::Host`.
+- `spec_tests.rs`: the script-reading pin test replaced by `banlieue-host`'s.
+- Template headers, `host_config.rs` docs, example 21,
+  `ch-host-provider-up.sh`: name `banlieue host install`.
+- Guides: `cloud-hypervisor-host.md` rewritten around `banlieue host` (flags,
+  stages, upgrade by upgrading banlieue, troubleshooting messages), and its
+  stale rows corrected (guest uid count 1024; storage and run roots 0711;
+  per-guest directories 2770; the template units; packages);
+  `cloud-hypervisor-host-systemd.md`.
+- CALM: an installer node and a deployed-in relationship with two
+  controls; `make calm-validate` clean, diagrams regenerated.
+- Threat model, full pass for ADR-0067: component, A-14, an actor, TB-11
+  (and the §5 diagram) with eight rows, one §8 risk (last-component-only
+  `O_NOFOLLOW`), §7.11 and §9 updated; stamp through ADR-0067.
+- Roadmap 09 ✅: phase 10 and its tasks ticked; `ROADMAPS.md`.
+
+### Impact
+- [ ] Breaking change (the script's steps and env file still work; its
+      pin variables are gone, as the pin now lives in the binary)
+- [ ] Requires cluster rollout
+- [ ] Config change only
+- [ ] Documentation only
+
+## [2026-09-27 16:45] - Remove a maintainer host name from docs and tests
+
+**Author:** Erick Bourgeois
+
+### Changed
+- `docs/src/guides/virtualmachine-pools.md`, `docs/src/guides/testing-claim-authorization.md`,
+  `crates/banlieue-provider-sdk/src/naming_tests.rs`,
+  `crates/banlieue-operator/src/workload_tests.rs`: a real host name
+  replaced by placeholders (`kvm-host-1`, `ch-host-1`, `dev-oidc.yaml`),
+  per `rules/no-real-infrastructure.md`. It remains in git history.
+
+### Impact
+- [ ] Breaking change
+- [x] Documentation only (and test data)
+
+## [2026-09-27 16:30] - Roadmap 09: ADR-0060 to ADR-0065 accepted; restart, pin and user-data tests; host capacity on the Provider
+
+**Author:** Erick Bourgeois
+
+### Changed
+- ADR-0060 to ADR-0065: **Accepted** 2026-09-27 (proposed 2026-09-25),
+  each implemented and verified on a host. References updated: roadmap
+  09's ADR table (and ADR-0063's row, which still said transient units),
+  `ROADMAPS.md`, the threat model header.
+- `crates/banlieue-provider-cloud-hypervisor/src/provider.rs`:
+  `HostCapacity` (CPU count and model from `/proc/cpuinfo`, memory and
+  reserved hugepages from `/proc/meminfo`, free space per storage class
+  by `statvfs`) published in the failure domain's `raw` attributes, with
+  `nestedVirtualization: "false"`; a figure the host would not give is
+  left out, not zero. The roadmap 09 stop condition asks for it; verified
+  on a live `Provider`. No API change (`raw` is a string map).
+
+### Added
+- `spec_tests.rs`: the VMM the host bootstrap installs (`CH_VERSION`) is
+  the pinned one (checked to fail on a mismatch).
+- `machine_tests.rs` + `FakeHost::restart_provider`: a restarted provider
+  adopts a running guest without stopping, starting, creating or booting
+  anything; resumes mid-provision; finishes an interrupted teardown; tears
+  down an already-removed machine.
+- `tests/e2e_restart.rs` and `make ch-restart-e2e` (runs its binary as
+  root): the real provider service is restarted mid-provision, with the
+  guest running, and mid-delete. **Passed live**: the guest's VMM kept its
+  `InvocationID` and PID; nothing left after delete.
+- `tests/e2e_machine.rs`: now proves the user-data was applied: it
+  installs a key for this run, logs in, and reads the file the user-data
+  wrote. **Passed live** through a `VirtualMachine` (a local controller
+  run against the test cluster, then stopped).
+
+### Docs
+- Roadmap 09: every task, test and definition-of-done box ticked except
+  phase 10 (`banlieue host`, ADR-0067); status banner rewritten; stale
+  boxes (guide, threat model, spike) audited and ticked. Roadmap 17: phase
+  G (Cloud Hypervisor). Roadmap 14: a per-class capability table, and the
+  "only vSphere has an infra CRD" note corrected. `ROADMAPS.md` rows 09 and
+  17. `docs/src/guides/cloud-hypervisor-host.md`: host capacity, upgrades.
+- `cargo deny check`: advisories, bans, licenses, sources ok.
+
+### Impact
+- [ ] Breaking change
+- [x] Requires host update: the provider binary (reinstalled on the test host)
+- [ ] Config change only
+- [ ] Documentation only
+
 ## [2026-09-27 14:40] - Cloud Hypervisor `Deferred` install verified live; per-machine installer copy; comparison handed to roadmaps 05/06
 
 **Author:** Erick Bourgeois

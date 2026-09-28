@@ -4,8 +4,9 @@ SPDX-License-Identifier: Apache-2.0
 -->
 # 0065 — vTPM through swtpm, and `Deferred` install, on Cloud Hypervisor
 
-- **Status:** Proposed
-- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Date:** 2026-09-27
+- **Proposed:** 2026-09-25
 - **Deciders:** Erick Bourgeois
 - **Amended:** 2026-09-25 (phase 0 spike results folded in; the four
   spike-gated points are verified); Decision 1 moves TPM manufacture out of

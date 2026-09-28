@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Erick Bourgeois, banlieue
 // SPDX-License-Identifier: Apache-2.0
 //
-// Installed by scripts/bootstrap-cloud-hypervisor-host.sh (ADR-0063
-// Decision 6); see docs/src/guides/cloud-hypervisor-host-systemd.md.
+// Installed by `banlieue host install` (ADR-0063 Decision 6, ADR-0067);
+// see docs/src/guides/cloud-hypervisor-host-systemd.md.
 //
 // The provider's user may start, stop and reset instances of banlieue's own
 // root-owned TEMPLATE units, and nothing else. What an instance runs, as

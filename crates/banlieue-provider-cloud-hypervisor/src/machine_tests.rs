@@ -186,6 +186,105 @@ lan = "br0"
         );
     }
 
+    // ------------------------------------------------------------------
+    // Provider restarts and upgrades (roadmap 09's restart test)
+    // ------------------------------------------------------------------
+
+    fn calls_matching(h: &FakeHost, prefix: &str) -> usize {
+        h.state
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|c| c.starts_with(prefix))
+            .count()
+    }
+
+    /// Upgrading the provider restarts its process, never a guest: a new
+    /// process adopts a running guest without stopping, starting, creating
+    /// or booting anything, and listens for its report again.
+    #[tokio::test]
+    async fn a_restarted_provider_adopts_a_running_guest_without_touching_it() {
+        let plan = plan_for(&deferred_spec());
+        let h = host(&plan);
+        pass(&h, &plan, &PowerState::PoweredOn).await;
+        pass(&h, &plan, &PowerState::PoweredOn).await;
+        assert_eq!(vm_state(&h, &plan), Some(VmState::Running));
+
+        h.restart_provider();
+        let o = pass(&h, &plan, &PowerState::PoweredOn).await;
+
+        assert_eq!(o.phase, Phase::Running);
+        assert_eq!(vm_state(&h, &plan), Some(VmState::Running));
+        for disturbing in ["stop_unit", "start_unit", "vm_create", "vm_boot"] {
+            assert_eq!(
+                calls_matching(&h, disturbing),
+                0,
+                "{disturbing} after restart"
+            );
+        }
+        assert!(
+            h.state.lock().unwrap().listening.contains(&plan.uid),
+            "the report listener is back"
+        );
+    }
+
+    /// Killed after starting the VMM's unit but before creating the VM: the
+    /// next process creates and boots it once, and does not start the unit
+    /// again (systemd refuses a second start of a loaded unit, and so does
+    /// the fake).
+    #[tokio::test]
+    async fn a_restart_mid_provision_resumes_where_the_last_process_stopped() {
+        let plan = plan_for(&spec());
+        let h = host(&plan);
+        let o = pass(&h, &plan, &PowerState::PoweredOn).await;
+        assert_eq!(o.phase, Phase::StartingVmm);
+
+        h.restart_provider();
+        let o = pass(&h, &plan, &PowerState::PoweredOn).await;
+
+        assert_eq!(o.phase, Phase::Running);
+        assert_eq!(calls_matching(&h, "start_unit"), 0);
+        assert_eq!(calls_matching(&h, "vm_create"), 1);
+        assert_eq!(calls_matching(&h, "vm_boot"), 1);
+    }
+
+    /// Killed mid-delete, after the unit and taps went but before the files
+    /// did: the next process's teardown finishes the job and verifies it.
+    #[tokio::test]
+    async fn a_restart_mid_delete_finishes_the_teardown() {
+        let plan = plan_for(&spec());
+        let h = host(&plan);
+        pass(&h, &plan, &PowerState::PoweredOn).await;
+        pass(&h, &plan, &PowerState::PoweredOn).await;
+        h.stop_unit(&plan.unit).await.unwrap();
+        h.remove_taps(&plan).await.unwrap();
+
+        h.restart_provider();
+        teardown(&h, &plan).await.expect("teardown completes");
+
+        let s = h.state.lock().unwrap();
+        assert!(!s.units.contains_key(&plan.unit));
+        assert!(s.taps.is_empty());
+        assert!(!s.dirs.contains(&plan.machine_dir));
+        assert!(!s.disks.contains(&plan.os_disk));
+    }
+
+    /// Killed after the teardown finished but before the finalizer was
+    /// released: a second teardown of nothing succeeds, so the finalizer
+    /// can go.
+    #[tokio::test]
+    async fn a_teardown_of_an_already_removed_machine_succeeds() {
+        let plan = plan_for(&spec());
+        let h = host(&plan);
+        pass(&h, &plan, &PowerState::PoweredOn).await;
+        pass(&h, &plan, &PowerState::PoweredOn).await;
+        teardown(&h, &plan).await.unwrap();
+
+        h.restart_provider();
+        teardown(&h, &plan).await.expect("idempotent");
+    }
+
     /// A VM that was created but not booted (a crash between the two calls)
     /// is booted, not created again.
     #[tokio::test]

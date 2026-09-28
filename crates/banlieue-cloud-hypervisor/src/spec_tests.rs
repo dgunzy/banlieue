@@ -45,6 +45,10 @@ mod tests {
         assert_eq!(pinned, format!("v{}.{}", v.major, v.minor));
     }
 
+    // That the VMM a host installs is this pinned release is asserted where
+    // the install constants live: banlieue-host's `pins_tests.rs` (ADR-0067
+    // Decision 4).
+
     fn schemas() -> Yaml {
         let doc: Yaml = serde_yaml::from_str(SPEC).expect("spec parses");
         doc["components"]["schemas"].clone()

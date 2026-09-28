@@ -100,6 +100,80 @@ lan = "br0"
             bridges_present: ["lan".to_string()].into(),
             vtpm: false,
             ek_ca_pem: None,
+            capacity: HostCapacity {
+                cpus: Some(32),
+                cpu_model: Some("Intel(R) Xeon(R) CPU E5-2630 v3 @ 2.40GHz".into()),
+                memory_mib: Some(64_318),
+                hugepages_mib: Some(0),
+                storage_free_gib: [("fast".to_string(), 812)].into(),
+            },
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Host capacity (roadmap 09's stop condition: real CPU, memory, storage)
+    // ------------------------------------------------------------------
+
+    const CPUINFO: &str = "processor\t: 0\nvendor_id\t: GenuineIntel\nmodel name\t: Intel(R) Xeon(R) CPU E5-2630 v3 @ 2.40GHz\nflags\t\t: fpu vme\n\nprocessor\t: 1\nmodel name\t: Intel(R) Xeon(R) CPU E5-2630 v3 @ 2.40GHz\n\n";
+    const MEMINFO: &str = "MemTotal:       65861768 kB\nMemFree:         1024000 kB\nHugePages_Total:     512\nHugePages_Free:      512\nHugepagesize:       2048 kB\n";
+
+    #[test]
+    fn cpu_count_and_model_come_from_cpuinfo() {
+        assert_eq!(
+            parse_cpuinfo(CPUINFO),
+            (
+                Some(2),
+                Some("Intel(R) Xeon(R) CPU E5-2630 v3 @ 2.40GHz".to_string())
+            )
+        );
+        assert_eq!(parse_cpuinfo(""), (None, None));
+    }
+
+    /// Hugepages are reserved, not allocated on demand, so they are their
+    /// own figure (roadmap 09, Gotchas).
+    #[test]
+    fn memory_and_reserved_hugepages_come_from_meminfo() {
+        assert_eq!(parse_meminfo(MEMINFO), (Some(64_318), Some(1024)));
+        assert_eq!(
+            parse_meminfo("MemTotal: 2048 kB\nHugePages_Total: 0\nHugepagesize: 2048 kB\n"),
+            (Some(2), Some(0))
+        );
+        assert_eq!(parse_meminfo("garbage"), (None, None));
+    }
+
+    #[test]
+    fn the_failure_domain_reports_the_hosts_capacity() {
+        let st = compute_status(&provider(&[]), &config(), &healthy(), 1);
+        let raw = &st.failure_domains[0].attributes.raw;
+        let get = |k: &str| raw.get(k).map(String::as_str);
+        assert_eq!(get("cpus"), Some("32"));
+        assert_eq!(
+            get("cpuModel"),
+            Some("Intel(R) Xeon(R) CPU E5-2630 v3 @ 2.40GHz")
+        );
+        assert_eq!(get("memoryMiB"), Some("64318"));
+        assert_eq!(get("hugepagesMiB"), Some("0"));
+        assert_eq!(get("storageFreeGiB"), Some("fast=812"));
+        assert_eq!(get("nestedVirtualization"), Some("false"));
+    }
+
+    /// A figure the host would not give is left out, not reported as zero.
+    #[test]
+    fn unknown_capacity_is_omitted() {
+        let facts = HostFacts {
+            capacity: HostCapacity::default(),
+            ..healthy()
+        };
+        let st = compute_status(&provider(&[]), &config(), &facts, 1);
+        let raw = &st.failure_domains[0].attributes.raw;
+        for k in [
+            "cpus",
+            "cpuModel",
+            "memoryMiB",
+            "hugepagesMiB",
+            "storageFreeGiB",
+        ] {
+            assert!(!raw.contains_key(k), "{k}: {raw:?}");
         }
     }
 

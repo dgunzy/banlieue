@@ -1,0 +1,40 @@
+[package]
+name = "banlieue-host"
+description = "`banlieue host`: prepares a KVM host for banlieue's Cloud Hypervisor provider from the binary itself (ADR-0067). Run once, as root; never part of a reconcile path."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[dependencies]
+# The host config type, unit and path constants, and the host facts the
+# provider itself checks: the installer writes what the provider reads, in
+# one language. The provider crate never depends on this one (ADR-0067
+# Decision 3; `boundary_tests.rs`).
+banlieue-provider-cloud-hypervisor = { path = "../banlieue-provider-cloud-hypervisor" }
+# The VMM release the client is written against (ADR-0061).
+banlieue-cloud-hypervisor = { path = "../banlieue-cloud-hypervisor" }
+# The EK certificate CN convention the self-test checks (ADR-0045).
+banlieue-provider-sdk = { path = "../banlieue-provider-sdk" }
+
+async-trait.workspace = true
+clap.workspace = true
+# Downloads of the pinned VMM and firmware: HTTPS through rustls with the ring
+# provider, as banlieue-oci does. No native TLS library.
+reqwest.workspace = true
+rustls.workspace = true
+# Free space, effective uid, host name, and O_NOFOLLOW handles for every
+# ownership and mode change. Already built for the provider.
+rustix = { version = "1", features = ["fs", "process", "system", "std"] }
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
+toml = "1"
+x509-parser.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

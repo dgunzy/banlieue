@@ -4,8 +4,9 @@ SPDX-License-Identifier: Apache-2.0
 -->
 # 0063 — Host supervision: systemd units over D-Bus
 
-- **Status:** Proposed
-- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Date:** 2026-09-27
+- **Proposed:** 2026-09-25
 - **Deciders:** Erick Bourgeois
 - **Amended:** 2026-09-26 (Decision 4: taps by tun/bridge ioctls, not
   `rtnetlink`, and one digit longer for the NIC index; Decision 5: machine

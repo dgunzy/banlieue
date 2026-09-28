@@ -10,8 +10,8 @@ mod tests {
     #[test]
     fn workload_name_is_prefixed_class_then_provider() {
         assert_eq!(
-            workload_name("cloud-hypervisor", "grill-a"),
-            "banlieue-provider-cloud-hypervisor-grill-a"
+            workload_name("cloud-hypervisor", "ch-host-1"),
+            "banlieue-provider-cloud-hypervisor-ch-host-1"
         );
     }
 

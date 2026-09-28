@@ -77,6 +77,13 @@ pub enum Command {
     #[cfg(feature = "imagebuilder")]
     Imagebuilder(banlieue_imagebuilder::Cli),
 
+    /// Prepare this machine as a Cloud Hypervisor host (ADR-0067).
+    ///
+    /// `preflight`, `status` and `selftest` change nothing; `install` runs
+    /// every stage, as root. It never creates a network bridge.
+    #[cfg(feature = "host")]
+    Host(banlieue_host::Cli),
+
     /// Print a shell completion script to stdout.
     ///
     /// Example (zsh): `banlieue completion zsh > "${fpath[1]}/_banlieue"`.
@@ -104,7 +111,7 @@ pub const COMPILED_BACKENDS: &[&str] = &[
     "libvirt",
     // Host-resident: bootstrap installs its cluster half (the shared
     // ClusterRole and an External ProviderClass); the host half is
-    // scripts/bootstrap-cloud-hypervisor-host.sh (ADR-0060).
+    // `banlieue host install` (ADR-0060, ADR-0067).
     #[cfg(feature = "cloud-hypervisor")]
     "cloud-hypervisor",
 ];
@@ -151,6 +158,8 @@ pub async fn dispatch(cli: Cli) -> anyhow::Result<()> {
         }
         #[cfg(feature = "imagebuilder")]
         Command::Imagebuilder(args) => banlieue_imagebuilder::run(args).await,
+        #[cfg(feature = "host")]
+        Command::Host(args) => Ok(banlieue_host::run(args).await?),
         Command::Completion(args) => {
             write_completion(args.shell, &mut std::io::stdout().lock());
             Ok(())
