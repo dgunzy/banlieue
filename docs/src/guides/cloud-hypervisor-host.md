@@ -400,6 +400,16 @@ kubectl get provider -n banlieue-system -o yaml   # status.failureDomains, statu
 kubectl get vmimage kairos-ubuntu-2404-ch -o jsonpath='{.status.perProvider}'
 ```
 
+The failure domain's `attributes.raw` also carries what the host has to
+give: `cpus`, `cpuModel`, `memoryMiB`, `hugepagesMiB` (reserved, so not
+free memory), `storageFreeGiB` per host storage class, and
+`nestedVirtualization: "false"`, which this class never offers.
+
+Upgrading the provider is replacing `/usr/local/bin/banlieue` and
+restarting `banlieue-provider-cloud-hypervisor`: guests are their own
+`banlieue-ch@` units and keep running, and the new process adopts them.
+`make ch-restart-e2e` checks exactly that on a host.
+
 ## Images from a registry (`Url` sources)
 
 A `BackingFile` source names a file you copied into a storage class's

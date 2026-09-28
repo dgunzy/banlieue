@@ -153,7 +153,7 @@ help: ## Show this help
         kind-bootstrap-install kind-e2e-install kind-e2e kind-e2e-ci kind-e2e-logs \
         kind-e2e-bootstrap kind-e2e-dry-run kind-e2e-escape-hatch \
         kind-e2e-workload kind-e2e-pause kind-e2e-workload-namespace kind-e2e-class \
-        claim-live-test pool-claim-e2e ch-e2e ch-vtpm-e2e ch-deferred-e2e ch-polkit-test provider-bench \
+        claim-live-test pool-claim-e2e ch-e2e ch-vtpm-e2e ch-deferred-e2e ch-restart-e2e ch-polkit-test provider-bench \
         dev-oidc-up dev-oidc-attach dev-oidc-github-creds dev-oidc-login \
         dev-oidc-try-claim dev-oidc-status dev-oidc-down \
         dev-oidc-k0s-up dev-oidc-k0s-login dev-oidc-k0s-grant \
@@ -528,6 +528,19 @@ ch-deferred-e2e: ## Cloud Hypervisor: tpmEnabled Deferred install -> sealed, rep
 	  exit 1; }
 	CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="sudo --preserve-env=KUBECONFIG,BANLIEUE_E2E_PROVIDER,BANLIEUE_E2E_INSTALLER,BANLIEUE_E2E_STORAGE_CLASS,BANLIEUE_E2E_NETWORK_CLASS,BANLIEUE_E2E_STORAGE_DIR,BANLIEUE_E2E_STATE_ROOT,BANLIEUE_E2E_SSH_AUTHORIZED_KEY" \
 	  cargo test -p banlieue-provider-cloud-hypervisor --test e2e_deferred -- \
+	  --ignored --nocapture --test-threads=1
+
+ch-restart-e2e: ## Cloud Hypervisor: restart the provider mid-provision, with a guest running, and mid-delete -> the guest is never disturbed (ON THE HOST, as root, never CI)
+	@# Creates a CloudHypervisorMachine directly (tests/e2e_restart.rs module
+	@# docs). Builds as you; only the test binary runs through sudo, because
+	@# it restarts the provider's service.
+	@test -n "$$BANLIEUE_E2E_PROVIDER" -a -n "$$BANLIEUE_E2E_PROVIDER_UNIT" -a -n "$$BANLIEUE_E2E_BOOT_IMAGE" -a -n "$$BANLIEUE_E2E_STORAGE_CLASS" -a -n "$$BANLIEUE_E2E_NETWORK_CLASS" -a -n "$$BANLIEUE_E2E_STORAGE_DIR" -a -n "$$BANLIEUE_E2E_RUN_ROOT" -a -n "$$KUBECONFIG" || { \
+	  echo "Set KUBECONFIG, BANLIEUE_E2E_PROVIDER, BANLIEUE_E2E_PROVIDER_UNIT, BANLIEUE_E2E_BOOT_IMAGE,"; \
+	  echo "BANLIEUE_E2E_STORAGE_CLASS, BANLIEUE_E2E_NETWORK_CLASS, BANLIEUE_E2E_STORAGE_DIR and"; \
+	  echo "BANLIEUE_E2E_RUN_ROOT (see tests/e2e_restart.rs)."; \
+	  exit 1; }
+	CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="sudo --preserve-env=KUBECONFIG,BANLIEUE_E2E_PROVIDER,BANLIEUE_E2E_PROVIDER_UNIT,BANLIEUE_E2E_BOOT_IMAGE,BANLIEUE_E2E_STORAGE_CLASS,BANLIEUE_E2E_NETWORK_CLASS,BANLIEUE_E2E_STORAGE_DIR,BANLIEUE_E2E_RUN_ROOT,BANLIEUE_E2E_NAMESPACE" \
+	  cargo test -p banlieue-provider-cloud-hypervisor --test e2e_restart -- \
 	  --ignored --nocapture --test-threads=1
 
 libvirt-e2e: ## Run the FULL image pipeline against a real cluster + libvirt host (LOCAL ONLY, never CI)

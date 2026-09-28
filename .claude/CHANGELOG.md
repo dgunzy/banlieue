@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026-09-27 16:30] - Roadmap 09: ADR-0060 to ADR-0065 accepted; restart, pin and user-data tests; host capacity on the Provider
+
+**Author:** Erick Bourgeois
+
+### Changed
+- ADR-0060 to ADR-0065: **Accepted** 2026-09-27 (proposed 2026-09-25),
+  each implemented and verified on a host. References updated: roadmap
+  09's ADR table (and ADR-0063's row, which still said transient units),
+  `ROADMAPS.md`, the threat model header.
+- `crates/banlieue-provider-cloud-hypervisor/src/provider.rs`:
+  `HostCapacity` (CPU count and model from `/proc/cpuinfo`, memory and
+  reserved hugepages from `/proc/meminfo`, free space per storage class
+  by `statvfs`) published in the failure domain's `raw` attributes, with
+  `nestedVirtualization: "false"`; a figure the host would not give is
+  left out, not zero. The roadmap 09 stop condition asks for it; verified
+  on a live `Provider`. No API change (`raw` is a string map).
+
+### Added
+- `spec_tests.rs`: the VMM the host bootstrap installs (`CH_VERSION`) is
+  the pinned one (checked to fail on a mismatch).
+- `machine_tests.rs` + `FakeHost::restart_provider`: a restarted provider
+  adopts a running guest without stopping, starting, creating or booting
+  anything; resumes mid-provision; finishes an interrupted teardown; tears
+  down an already-removed machine.
+- `tests/e2e_restart.rs` and `make ch-restart-e2e` (runs its binary as
+  root): the real provider service is restarted mid-provision, with the
+  guest running, and mid-delete. **Passed live**: the guest's VMM kept its
+  `InvocationID` and PID; nothing left after delete.
+- `tests/e2e_machine.rs`: now proves the user-data was applied: it
+  installs a key for this run, logs in, and reads the file the user-data
+  wrote. **Passed live** through a `VirtualMachine` (a local controller
+  run against the test cluster, then stopped).
+
+### Docs
+- Roadmap 09: every task, test and definition-of-done box ticked except
+  phase 10 (`banlieue host`, ADR-0067); status banner rewritten; stale
+  boxes (guide, threat model, spike) audited and ticked. Roadmap 17: phase
+  G (Cloud Hypervisor). Roadmap 14: a per-class capability table, and the
+  "only vSphere has an infra CRD" note corrected. `ROADMAPS.md` rows 09 and
+  17. `docs/src/guides/cloud-hypervisor-host.md`: host capacity, upgrades.
+- `cargo deny check`: advisories, bans, licenses, sources ok.
+
+### Impact
+- [ ] Breaking change
+- [x] Requires host update: the provider binary (reinstalled on the test host)
+- [ ] Config change only
+- [ ] Documentation only
+
 ## [2026-09-27 14:40] - Cloud Hypervisor `Deferred` install verified live; per-machine installer copy; comparison handed to roadmaps 05/06
 
 **Author:** Erick Bourgeois

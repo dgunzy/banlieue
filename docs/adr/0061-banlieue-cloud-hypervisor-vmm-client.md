@@ -4,8 +4,9 @@ SPDX-License-Identifier: Apache-2.0
 -->
 # 0061 — `banlieue-cloud-hypervisor`: a first-party client for the VMM API
 
-- **Status:** Proposed
-- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Date:** 2026-09-27
+- **Proposed:** 2026-09-25
 - **Deciders:** Erick Bourgeois
 - **Related:** [ADR-0060](0060-cloud-hypervisor-first-class-provider-topology.md)
   (the provider this client serves),

@@ -57,6 +57,18 @@ actually buildable today (same provider class).
     libvirt-specific tasks, and if so, libvirt's `MigrationPolicy:
     Automatic` may always mean recreate, by design, indefinitely.
 
+## Per-class capability
+
+What each provider class could offer Phase A, and what it does today.
+Update a row when a backend's answer changes.
+
+| Class | Today | Native mechanism | Phase A outlook |
+|---|---|---|---|
+| vSphere | `Recreate` | `RelocateVM_Task` (vMotion, Storage vMotion) within one vCenter; cross-vCenter needs newer APIs | The first target: in place, no guest downtime, within one `Provider` |
+| libvirt | `Recreate` | libvirt can migrate, but banlieue's provider implements none of it, and pools are host-local | Likely `Recreate` by design (see Preconditions) |
+| Cloud Hypervisor | `Recreate` | Upstream `vm.send-migration` / `vm.receive-migration` between two VMMs, but only with the disk reachable from both hosts; each guest's swtpm state and its host-local storage class stay behind | Out of scope until a shared storage class exists; then a VMM-to-VMM move between two host-resident providers, which also needs a way for them to meet that is not an RPC between banlieue components (roadmap 09, 2026-09-27) |
+| Proxmox | no provider | Live migration over shared storage (unresearched) | Unscoped until roadmap 06 lands |
+
 ## Current state (confirmed in code, as of this writing)
 
 - `crates/banlieue-controller/src/reconciler/migration.rs`: `evaluate()`
@@ -72,12 +84,12 @@ actually buildable today (same provider class).
   vmdks.
 - `VirtualMachineStatus.conditions`'s doc comment lists an optional
   `Migrating` condition type; nothing sets it anywhere in the codebase.
-- Only `VSphereMachine`/`VSphereCluster` exist as real infra CRDs
-  (`banlieue-api/src/infrastructure/`). `banlieue-provider-proxmox` and
-  `banlieue-provider-libvirt` are scaffold-only per
-  `06-phase-1c-proxmox-provider.md` / `07-phase-1d-libvirt-provider.md` —
-  Phase A work here should start and stay scoped to vSphere until at
-  least one other provider actually has an infra CRD implemented.
+- *Updated 2026-09-27:* `VSphereMachine`, `LibvirtMachine` and
+  `CloudHypervisorMachine` are real infra CRDs
+  (`banlieue-api/src/infrastructure/`); only Proxmox has no provider. None
+  implements any relocation: see [Per-class capability](#per-class-capability).
+  Phase A should still start with vSphere, the only class with an in-place
+  mechanism that needs no shared storage.
 
 ## Design (recap from ADR-0036 — read the ADR for full reasoning)
 

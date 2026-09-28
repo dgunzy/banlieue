@@ -1,8 +1,11 @@
 // Copyright (c) 2026 Erick Bourgeois, banlieue
 // SPDX-License-Identifier: Apache-2.0
 //! End to end on a real Cloud Hypervisor host: a `VirtualMachine` becomes a
-//! running guest with an address, and deleting it leaves **nothing** behind
-//! on the host (the leak test).
+//! running guest with an address that **applied its user-data** (the test
+//! logs in with a key the user-data installed and reads a file the
+//! user-data wrote), and deleting it leaves **nothing** behind on the host
+//! (the leak test). The user-data uses Kairos `stages`, so the image is a
+//! Kairos image; the machine running the test needs `ssh` and `ssh-keygen`.
 //!
 //! Everything asserted here was first verified by hand on a bootstrapped
 //! host, and several of the checks exist because a hand run found the bug
@@ -34,6 +37,7 @@
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use banlieue_api::banlieue::{Provider, VMImage, VirtualMachine};
@@ -55,6 +59,10 @@ const DELETE_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const POLL: Duration = Duration::from_secs(3);
 const SSH_PORT: u16 = 22;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+/// sshd may answer before the user-data's login exists.
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+/// The login the user-data creates for this test.
+const LOGIN_USER: &str = "e2e";
 /// Tap names are `bch` + the first 10 hex digits of the machine UID + NIC.
 const TAP_PREFIX: &str = "bch";
 const TAP_UID_DIGITS: usize = 10;
@@ -210,10 +218,25 @@ async fn run(
     vms: &Api<VirtualMachine>,
     machines: &Api<CloudHypervisorMachine>,
 ) -> Result<(), String> {
+    // A key for this run only, so the login proves the seed was applied.
+    let keys = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let key = keys.path().join("id_ed25519");
+    let made = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-C", "banlieue-e2e", "-f"])
+        .arg(&key)
+        .status()
+        .map_err(|e| format!("ssh-keygen: {e}"))?;
+    if !made.success() {
+        return Err(format!("ssh-keygen failed: {made}"));
+    }
+    let public = std::fs::read_to_string(key.with_extension("pub"))
+        .map_err(|e| e.to_string())?
+        .trim()
+        .to_string();
     let cm: ConfigMap = serde_json::from_value(json!({
         "metadata": {"name": name},
         "data": {"user-data": format!(
-            "#cloud-config\nhostname: {name}\nstages:\n  boot:\n    - name: e2e marker\n      files:\n        - path: /run/{marker}\n          content: \"{marker}\"\n          permissions: 0644\n"
+            "#cloud-config\nhostname: {name}\nusers:\n  - name: {LOGIN_USER}\n    groups: [admin]\n    ssh_authorized_keys:\n      - {public}\nstages:\n  boot:\n    - name: e2e marker\n      files:\n        - path: /run/{marker}\n          content: \"{marker}\"\n          permissions: 0644\n"
         )},
     }))
     .map_err(|e| e.to_string())?;
@@ -289,6 +312,46 @@ async fn run(
             .map(drop)
     })
     .await;
+
+    // The guest applied its user-data: the login it created accepts this
+    // run's key, and the file it wrote holds the marker.
+    let read = wait_for("a login with the user-data's key", LOGIN_TIMEOUT, || {
+        let key = key.clone();
+        let target = format!("{LOGIN_USER}@{address}");
+        let path = format!("/run/{marker}");
+        async move {
+            let out = Command::new("ssh")
+                .args(["-i"])
+                .arg(&key)
+                .args([
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    "UserKnownHostsFile=/dev/null",
+                    "-o",
+                    "ConnectTimeout=5",
+                    "-o",
+                    "LogLevel=ERROR",
+                    &target,
+                    "cat",
+                    &path,
+                ])
+                .output()
+                .ok()?;
+            out.status
+                .success()
+                .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        }
+    })
+    .await;
+    if read != marker {
+        return Err(format!(
+            "the user-data's file holds {read:?}, not {marker:?}"
+        ));
+    }
+    println!("logged in with the user-data's key; its file holds the marker");
 
     // On the host: unit, tap and directories exist.
     // An instance of the root-owned template, keyed by the guest's uid.

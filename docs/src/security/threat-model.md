@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 > **Status:** Living document. Last full pass **2026-09-27**, against the
 > architecture defined by **ADR-0001 … ADR-0065** (0057–0059 unallocated;
-> 0060–0065 Proposed). This pass covers the **host-resident Cloud Hypervisor
+> 0060–0065 Accepted 2026-09-27). This pass covers the **host-resident Cloud Hypervisor
 > provider** (ADR-0060 to ADR-0065), the first banlieue component that runs
 > **outside** the cluster, on the hypervisor host itself: **a new component,
 > a new actor (a compromised VMM), two new assets and two new trust

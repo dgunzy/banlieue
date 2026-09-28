@@ -14,8 +14,11 @@
 > `Provider.status` reports the host's real CPU, memory, storage targets and
 > bridges.
 >
-> **Status: gate decided, native spike nearly done** (2026-09-25; only the
-> QEMU timing comparison is open). Cloud
+> **Status (2026-09-27): the provider is done; phase 10 is open.** ADR-0060
+> to ADR-0065 are accepted, every task and test above phase 10 is ticked,
+> and the stop condition and definition of done hold live on a real host.
+> What remains is phase 10: `banlieue host`, which replaces the bootstrap
+> script (ADR-0067, not yet written). Cloud
 > Hypervisor is a **first-class, host-resident provider** (shape A below),
 > not libvirt's `ch` driver: [ADR-0060](../../docs/adr/0060-cloud-hypervisor-first-class-provider-topology.md).
 > Read [The defining problem](#the-defining-problem-there-is-no-daemon)
@@ -160,12 +163,12 @@ Numbers are next-free as of 2026-09-20, after the three roadmap
 
 | ADR | Decides |
 |---|---|
-| 0060 | **Provider topology for daemonless backends.** *Drafted as [Proposed](../../docs/adr/0060-cloud-hypervisor-first-class-provider-topology.md), 2026-09-25.* Outcome of the gate. For A: `ProviderClass.spec.deployment: Managed \| External`, where `External` makes `banlieue-operator` create the ServiceAccount, Role, RoleBinding and credential but no Deployment. Amends ADR-0003 and ADR-0012. Also: how an out-of-cluster process keeps its credential fresh. |
-| 0061 | *[Proposed](../../docs/adr/0061-banlieue-cloud-hypervisor-vmm-client.md), 2026-09-25.* **`banlieue-cloud-hypervisor`**, a first-party client for the VMM's REST API over a Unix socket. Hand-written types for the endpoints actually used, pinned to a named upstream release of `cloud-hypervisor.yaml`. |
-| 0062 | *[Proposed](../../docs/adr/0062-cloudhypervisormachine-inframachine-contract.md), 2026-09-25.* **`CloudHypervisorMachine`** and its `Template`: the InfraMachine contract on this backend. |
-| 0063 | *[Proposed](../../docs/adr/0063-cloud-hypervisor-host-supervision.md), 2026-09-25.* **Host process supervision.** Transient systemd units created over D-Bus, not child processes and not `systemd-run`. |
-| 0064 | *[Proposed](../../docs/adr/0064-artifact-delivery-to-host-resident-providers.md), 2026-09-25.* **Artifact delivery to a provider outside the cluster.** Revisits the alternative ADR-0010 deferred ("revisit if a future provider needs to consume the artifact from outside the build namespace/cluster"). This is that provider. |
-| 0065 | *[Proposed](../../docs/adr/0065-cloud-hypervisor-vtpm-and-deferred-install.md), 2026-09-25.* **vTPM through swtpm, and `Deferred` install on Cloud Hypervisor.** |
+| 0060 | **Provider topology for daemonless backends.** *[Accepted](../../docs/adr/0060-cloud-hypervisor-first-class-provider-topology.md) 2026-09-27 (proposed 2026-09-25).* Outcome of the gate. For A: `ProviderClass.spec.deployment: Managed \| External`, where `External` makes `banlieue-operator` create the ServiceAccount, Role, RoleBinding and credential but no Deployment. Amends ADR-0003 and ADR-0012. Also: how an out-of-cluster process keeps its credential fresh. |
+| 0061 | *[Accepted](../../docs/adr/0061-banlieue-cloud-hypervisor-vmm-client.md) 2026-09-27 (proposed 2026-09-25).* **`banlieue-cloud-hypervisor`**, a first-party client for the VMM's REST API over a Unix socket. Hand-written types for the endpoints actually used, pinned to a named upstream release of `cloud-hypervisor.yaml`. |
+| 0062 | *[Accepted](../../docs/adr/0062-cloudhypervisormachine-inframachine-contract.md) 2026-09-27 (proposed 2026-09-25).* **`CloudHypervisorMachine`** and its `Template`: the InfraMachine contract on this backend. |
+| 0063 | *[Accepted](../../docs/adr/0063-cloud-hypervisor-host-supervision.md) 2026-09-27 (proposed 2026-09-25).* **Host process supervision.** systemd units driven over D-Bus, not child processes and not `systemd-run`; *amended 2026-09-27*: instances of root-owned template units, not transient units. |
+| 0064 | *[Accepted](../../docs/adr/0064-artifact-delivery-to-host-resident-providers.md) 2026-09-27 (proposed 2026-09-25).* **Artifact delivery to a provider outside the cluster.** Revisits the alternative ADR-0010 deferred ("revisit if a future provider needs to consume the artifact from outside the build namespace/cluster"). This is that provider. |
+| 0065 | *[Accepted](../../docs/adr/0065-cloud-hypervisor-vtpm-and-deferred-install.md) 2026-09-27 (proposed 2026-09-25).* **vTPM through swtpm, and `Deferred` install on Cloud Hypervisor.** |
 | 0066 | **Snapshot-to-disk for warm pool members.** Optional. Only if phase 7 goes ahead. |
 | 0067 | **`banlieue host`: host install as a subcommand.** Phase 10. Extends ADR-0004's dispatch with a verb you run as root on a hypervisor, and states what stays in shell (the bridge, `--remote`). Next free number: `0066` is reserved above, so this takes `0067`. |
 
@@ -347,12 +350,13 @@ with a real consistency hazard, so it is ADR-0066 and optional.
 
 ## 9. Docs and threat model
 
-- [ ] `guides/cloud-hypervisor-provider.md`: host preparation (KVM, bridge,
+- [x] `guides/cloud-hypervisor-provider.md`: host preparation (KVM, bridge,
       firmware, swtpm, the systemd unit for the provider, the credential).
-      *Host half done 2026-09-26:* `guides/cloud-hypervisor-host.md` covers
-      KVM, a remote-safe bridge on Debian, the pinned VMM and firmware, swtpm
-      and the EK CA, the provider unit, and a hand smoke-boot. The credential
-      section waits for `banlieue bootstrap` (ADR-0060 Decision 5).
+      *Landed as `guides/cloud-hypervisor-host.md` (2026-09-26):* KVM, a
+      remote-safe bridge on Debian, the pinned VMM and firmware, swtpm and
+      the EK CA, the provider unit, a hand smoke-boot, and the credential
+      (`banlieue bootstrap cloud-hypervisor-host`, self-renewing token,
+      revocation); plus `guides/cloud-hypervisor-host-systemd.md`.
 - [x] Extend `scripts/` with a host bootstrap, in the spirit of
       `bootstrap-libvirt-tls.sh`. *2026-09-25:*
       `scripts/bootstrap-cloud-hypervisor-host.sh`, local or `--remote
@@ -363,15 +367,17 @@ with a real consistency hazard, so it is ADR-0066 and optional.
       enabled only once the binary and kubeconfig exist). It never touches
       a bridge. Tested as root in a Debian 13 container; `preflight` on a
       bare-metal host.
-- [ ] Threat model pass. New: a cluster credential on a hypervisor. Bound it:
+- [x] Threat model pass. *2026-09-26, and four passes on 2026-09-27
+      (vTPM, `Deferred`, template units, the installer copy).* New: a
+      cluster credential on a hypervisor. Bound it:
       server-side filtered watch on its own `Provider` and machines, status
       patch on those, its own `VMImage` row, its Lease, events, and **no
       Secret reads at all**, since user-data arrives already resolved in the
       machine spec. Also new: a guest escape now lands next to that
       credential, which is the strongest argument for keeping the RBAC that
       small.
-- [ ] Update [`ROADMAPS.md`](../../ROADMAPS.md) in the same commit as each
-      state change.
+- [x] Update [`ROADMAPS.md`](../../ROADMAPS.md) in the same commit as each
+      state change. *Standing practice; current as of 2026-09-27.*
 
 ## 10. `banlieue host`: the install as a subcommand
 
@@ -527,9 +533,12 @@ revisit A when a consumer needs what the driver cannot do.
 
 ## Tasks
 
-- [ ] Spike native checks (gate decision written down: ADR-0060, A).
-- [ ] ADR-0060 to ADR-0065 accepted. CALM updated. *All six drafted as
-      Proposed 2026-09-25; ADR-0065 has three spike-gated decisions.*
+- [x] Spike native checks (gate decision written down: ADR-0060, A).
+      *2026-09-25/26:* seed, swtpm, `Deferred`, UEFI variables, and the
+      QEMU comparison; see phase 0 above.
+- [x] ADR-0060 to ADR-0065 accepted. CALM updated. *All six drafted as
+      Proposed 2026-09-25; accepted 2026-09-27, each implemented and
+      verified live.*
       *2026-09-26: CALM updated* (provider, per-guest VMM and KVM host
       nodes; API, VMM and deployed-in relationships with controls; a
       create flow), `make calm-validate` clean. Acceptance is the
@@ -610,7 +619,11 @@ revisit A when a consumer needs what the driver cannot do.
       behind a Cargo feature; the shell script shrinks to a `--remote` wrapper
       (phase 10).
 - [ ] `make ch-host-install-test`: the stages as root in a Debian 13 container.
-- [ ] Test asserting the VMM pin equals ADR-0061's vendored-spec release.
+- [x] Test asserting the VMM pin equals ADR-0061's vendored-spec release.
+      *2026-09-27:* `spec_tests.rs` ties the three together: the vendored
+      spec's digest to `spec/PIN`, the pin to the client's version gate,
+      and (new) the pin to the VMM the host bootstrap installs
+      (`CH_VERSION`).
 
 ## Tests
 
@@ -619,9 +632,18 @@ revisit A when a consumer needs what the driver cannot do.
       what systemd and the VMM reject); the syscalls and systemd are also
       live-tested without root (`tests/live_sys.rs` in a user+net
       namespace, `tests/live_systemd.rs` on the session bus).
-- [ ] VMM configuration JSON asserted against the vendored spec.
-- [ ] Restart test: kill the provider mid-provision and mid-delete, assert it
-      re-adopts and converges.
+- [x] VMM configuration JSON asserted against the vendored spec.
+      *`spec_tests.rs`:* every field of `vm.create` (a plan using every
+      optional feature), the `vm.remove-device` body, and every endpoint
+      path, checked against the pinned document.
+- [x] Restart test: kill the provider mid-provision and mid-delete, assert it
+      re-adopts and converges. *2026-09-27:* unit tests
+      (`machine_tests.rs`: adopt a running guest touching nothing, resume
+      mid-provision, finish an interrupted teardown, tear down twice) and
+      `tests/e2e_restart.rs` (`make ch-restart-e2e`), **passed live**: the
+      real provider service restarted mid-provision, with the guest
+      running (same VMM `InvocationID` and PID after), and mid-delete
+      (nothing left).
 - [x] Leak test: create then delete leaves no unit, tap, file or directory.
       *2026-09-26:* `tests/e2e_machine.rs` (`make ch-e2e`), run on the host:
       VM → `Ready` with an address → sshd answers → unit, tap and
@@ -635,13 +657,29 @@ revisit A when a consumer needs what the driver cannot do.
 
 ## Definition of done
 
-- [ ] The stop condition holds live on a real host.
+- [x] The stop condition holds live on a real host. *2026-09-27:* `make
+      ch-e2e` (a `VirtualMachine` whose user-data is proven applied: the
+      test logs in with the key it installed and reads the file it wrote;
+      delete leaves nothing), `make ch-deferred-e2e` (swtpm state gone on
+      delete), `make ch-restart-e2e`, and `Provider.status` publishing the
+      host's CPUs, CPU model, memory, hugepages and free space per storage
+      class (new: `provider.rs::HostCapacity`).
 - [x] A `tpmEnabled` class installs `Deferred`, seals to its own vTPM, and
       leaves no swtpm state behind on delete. *2026-09-27, `make
       ch-deferred-e2e` on a host (the machine created directly).*
-- [ ] Provider upgrade with guests running: zero guest restarts.
-- [ ] `cargo deny` clean. No new native dependency in the binary.
-- [ ] Roadmap 17 amended with phase G. Roadmap 14's per-class table updated.
+- [x] Provider upgrade with guests running: zero guest restarts.
+      *2026-09-27, `make ch-restart-e2e`:* guests are their own
+      `banlieue-ch@` units, so restarting the provider's service leaves
+      the VMM process as it was; the new process re-binds the report
+      socket and adopts the guest.
+- [x] `cargo deny` clean. No new native dependency in the binary.
+      *2026-09-27:* advisories, bans, licenses and sources ok (duplicate
+      version warnings only); the release binary links libc, libm and
+      libgcc_s and nothing else.
+- [x] Roadmap 17 amended with phase G. Roadmap 14's per-class table updated.
+      *2026-09-27:* phase G (prerequisites verified; a live pool still
+      open, tracked there); roadmap 14 gained the table, with this class
+      as `Recreate` until a shared storage class exists.
 
 ## Gotchas
 

@@ -4,8 +4,9 @@ SPDX-License-Identifier: Apache-2.0
 -->
 # 0064 — Artifact delivery to a host-resident provider: OCI registry, by digest
 
-- **Status:** Proposed
-- **Date:** 2026-09-25
+- **Status:** Accepted
+- **Date:** 2026-09-27
+- **Proposed:** 2026-09-25
 - **Deciders:** Erick Bourgeois
 - **Amended:** 2026-09-26 (Decision 5 added: `BackingFile` sources, the
   first slice, served before the registry path exists); 2026-09-26
