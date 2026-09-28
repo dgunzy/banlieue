@@ -859,7 +859,7 @@ mod tests {
     fn external_inputs(class: &ProviderClassSpec) -> WorkloadInputs<'_> {
         WorkloadInputs {
             class_name: "cloud-hypervisor",
-            provider_name: "grill-a",
+            provider_name: "ch-host-1",
             credentials_secret: None,
             ..inputs(class)
         }
@@ -885,7 +885,7 @@ mod tests {
         assert!(set.import_role.is_none() && set.import_role_binding.is_none());
         assert_eq!(
             set.service_account.metadata.name.as_deref(),
-            Some("banlieue-provider-cloud-hypervisor-grill-a")
+            Some("banlieue-provider-cloud-hypervisor-ch-host-1")
         );
         assert!(set.cluster_role_binding.metadata.name.is_some());
     }
@@ -913,7 +913,7 @@ mod tests {
             for r in rules {
                 assert_eq!(
                     r.resource_names.as_deref(),
-                    Some(&["grill-a".to_string()][..]),
+                    Some(&["ch-host-1".to_string()][..]),
                     "{resource}"
                 );
             }
@@ -923,7 +923,7 @@ mod tests {
         assert_eq!(token[0].verbs, vec!["create".to_string()]);
         assert_eq!(
             token[0].resource_names.as_deref(),
-            Some(&["banlieue-provider-cloud-hypervisor-grill-a".to_string()][..])
+            Some(&["banlieue-provider-cloud-hypervisor-ch-host-1".to_string()][..])
         );
         // The class's own rules are appended, as for Managed.
         assert_eq!(

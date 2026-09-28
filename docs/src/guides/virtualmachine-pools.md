@@ -49,8 +49,8 @@ NAME           WARM   AVAILABLE   PROVISIONING   CLAIMED   AGE
 sandbox-pool   2      0           2              0         5s
 
 NAME                  CLASS   IMAGE                  PROVIDER   POWER       READY
-sandbox-pool-9dmtx    small   ubuntu-22.04-libvirt   grill                  
-sandbox-pool-bfttl    small   ubuntu-22.04-libvirt   grill                  
+sandbox-pool-9dmtx    small   ubuntu-22.04-libvirt   kvm-host-1             
+sandbox-pool-bfttl    small   ubuntu-22.04-libvirt   kvm-host-1             
 ```
 
 and, once they provision, `AVAILABLE` reaches `WARM`.
