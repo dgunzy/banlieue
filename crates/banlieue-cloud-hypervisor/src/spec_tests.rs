@@ -45,19 +45,9 @@ mod tests {
         assert_eq!(pinned, format!("v{}.{}", v.major, v.minor));
     }
 
-    /// The VMM the host bootstrap installs is the pinned one: a bump of
-    /// either alone would put a VMM on hosts that the client was not
-    /// checked against, or check the client against a VMM no host runs.
-    #[test]
-    fn the_host_bootstrap_installs_the_pinned_vmm() {
-        const BOOTSTRAP: &str = include_str!("../../../scripts/bootstrap-cloud-hypervisor-host.sh");
-        const DEFAULT: &str = "CH_VERSION=\"${CH_VERSION:-";
-        let installed = BOOTSTRAP
-            .lines()
-            .find_map(|l| l.trim().strip_prefix(DEFAULT)?.strip_suffix("}\""))
-            .expect("the bootstrap sets a default CH_VERSION");
-        assert_eq!(installed, pin_value("version"));
-    }
+    // That the VMM a host installs is this pinned release is asserted where
+    // the install constants live: banlieue-host's `pins_tests.rs` (ADR-0067
+    // Decision 4).
 
     fn schemas() -> Yaml {
         let doc: Yaml = serde_yaml::from_str(SPEC).expect("spec parses");

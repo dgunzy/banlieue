@@ -6,6 +6,7 @@ members = [
     "crates/banlieue-cloud-hypervisor",
     "crates/banlieue-oci",
     "crates/banlieue-controller",
+    "crates/banlieue-host",
     "crates/banlieue-imagebuilder",
     "crates/banlieue-libvirt",
     "crates/banlieue-operator",

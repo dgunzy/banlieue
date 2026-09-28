@@ -16,7 +16,8 @@
 #   BANLIEUE_BINARY_SRC  banlieue binary to install; default: target/release
 #   BASE_IMAGE           raw image to put in the first storage class's cache;
 #                        optional
-#   STORAGE_CLASSES      name=dir ...    (see bootstrap-cloud-hypervisor-host.sh)
+#   STORAGE_CLASSES      name=dir ...    (bootstrap-cloud-hypervisor-host.sh
+#                        translates these to `banlieue host` flags)
 #   NETWORK_CLASSES      name=bridge ...
 #   PROVIDER_NAME        the Provider object this host is; default: hostname
 #

@@ -153,7 +153,7 @@ help: ## Show this help
         kind-bootstrap-install kind-e2e-install kind-e2e kind-e2e-ci kind-e2e-logs \
         kind-e2e-bootstrap kind-e2e-dry-run kind-e2e-escape-hatch \
         kind-e2e-workload kind-e2e-pause kind-e2e-workload-namespace kind-e2e-class \
-        claim-live-test pool-claim-e2e ch-e2e ch-vtpm-e2e ch-deferred-e2e ch-restart-e2e ch-polkit-test provider-bench \
+        claim-live-test pool-claim-e2e ch-e2e ch-vtpm-e2e ch-deferred-e2e ch-restart-e2e ch-host-install-test ch-polkit-test provider-bench \
         dev-oidc-up dev-oidc-attach dev-oidc-github-creds dev-oidc-login \
         dev-oidc-try-claim dev-oidc-status dev-oidc-down \
         dev-oidc-k0s-up dev-oidc-k0s-login dev-oidc-k0s-grant \
@@ -486,6 +486,13 @@ provider-bench: ## Benchmark one provider through the VirtualMachine API (docs/s
 	  echo "See crates/banlieue-controller/tests/bench_provider.rs."; \
 	  exit 1; }
 	cargo test -p banlieue-controller --test bench_provider -- --ignored --nocapture
+
+ch-host-install-test: ## Cloud Hypervisor: `banlieue host install` as root in a Debian 13 container: install, idempotence, read-only verbs, selftest, fail-closed pin (needs /dev/kvm and a rootful container runtime)
+	@# ADR-0067; roadmap 09 phase 10. Builds as you; the container runs as
+	@# root and is removed afterwards. CH_HOST_ARTIFACTS_DIR=<dir> installs
+	@# the pinned release from local files instead of downloading it.
+	cargo build -p banlieue
+	BANLIEUE_BINARY=target/debug/banlieue scripts/test-ch-host-install.sh
 
 ch-polkit-test: ## Cloud Hypervisor: run the host polkit rule against its allow/deny cases (needs node)
 	node scripts/test-cloud-hypervisor-polkit.js

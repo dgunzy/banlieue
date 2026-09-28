@@ -242,6 +242,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "banlieue-controller",
+ "banlieue-host",
  "banlieue-imagebuilder",
  "banlieue-operator",
  "banlieue-provider-cloud-hypervisor",
@@ -305,6 +306,26 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "banlieue-host"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "banlieue-cloud-hypervisor",
+ "banlieue-provider-cloud-hypervisor",
+ "banlieue-provider-sdk",
+ "clap",
+ "reqwest",
+ "rustix",
+ "rustls",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "toml",
+ "x509-parser",
 ]
 
 [[package]]

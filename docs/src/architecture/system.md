@@ -58,6 +58,7 @@ flowchart LR
     network-cloud-hypervisor-host["Cloud Hypervisor KVM Host"]
     service-oci-registry["OCI Registry (operator-provided, external)"]
     service-swtpm["swtpm (one per tpmEnabled Cloud Hypervisor guest)"]
+    service-banlieue-host-installer["banlieue host (installer)"]
     subgraph sg_system-banlieue-binary [System Banlieue Binary]
         service-banlieue-controller
         service-banlieue-operator
@@ -134,6 +135,9 @@ flowchart LR
     service-provider-cloud-hypervisor -->|HTTPS| service-oci-registry
     service-cloud-hypervisor-vmm -->|TCP| service-swtpm
     service-cloud-hypervisor-vmm --> service-provider-cloud-hypervisor
+    subgraph sg_network-cloud-hypervisor-host [Network Cloud Hypervisor Host]
+        service-banlieue-host-installer
+    end
 ```
 
 <sub>Source: nodes and relationships in `architecture.json`.</sub>

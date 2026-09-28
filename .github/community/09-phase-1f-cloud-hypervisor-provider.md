@@ -14,11 +14,10 @@
 > `Provider.status` reports the host's real CPU, memory, storage targets and
 > bridges.
 >
-> **Status (2026-09-27): the provider is done; phase 10 is open.** ADR-0060
-> to ADR-0065 are accepted, every task and test above phase 10 is ticked,
-> and the stop condition and definition of done hold live on a real host.
-> What remains is phase 10: `banlieue host`, which replaces the bootstrap
-> script (ADR-0067, not yet written). Cloud
+> **Status (2026-09-27): done.** ADR-0060 to ADR-0065 and ADR-0067 are
+> accepted; every task, test and definition-of-done item is
+> ticked, and each was verified live on a real host. Phase 10 turned the
+> bootstrap script into `banlieue host`. Cloud
 > Hypervisor is a **first-class, host-resident provider** (shape A below),
 > not libvirt's `ch` driver: [ADR-0060](../../docs/adr/0060-cloud-hypervisor-first-class-provider-topology.md).
 > Read [The defining problem](#the-defining-problem-there-is-no-daemon)
@@ -386,8 +385,11 @@ with a real consistency hazard, so it is ADR-0066 and optional.
 > it is `scripts/bootstrap-cloud-hypervisor-host.sh` plus an env file plus the
 > `banlieue` binary — three artifacts to deliver and three ways to get it wrong.
 >
-> **Status: planned, not started.** Needs ADR-0067 first: this is a CLI contract
-> and it makes the same binary something you run as root on a hypervisor.
+> **Status: done 2026-09-27.** [ADR-0067](../../docs/adr/0067-banlieue-host-install-subcommand.md)
+> (Accepted 2026-09-27) decides the contract; `crates/banlieue-host` implements it behind
+> the binary's `host` feature; `make ch-host-install-test` runs it as root in a
+> Debian 13 container; the script is now a `--remote` wrapper. Every invariant
+> below is a test. The open questions are answered in ADR-0067 Decision 8.
 
 ### Why it should not stay in shell
 
@@ -615,10 +617,23 @@ revisit A when a consumer needs what the driver cannot do.
       `ch-host-provider-up.sh`; two guides (bootstrap; systemd, polkit,
       identities); example 21; full threat-model pass through ADR-0065
       (TB-8, TB-9, §7.11, five §8 entries).
-- [ ] ADR-0067, then `banlieue host {preflight,status,selftest,install}`
+- [x] ADR-0067, then `banlieue host {preflight,status,selftest,install}`
       behind a Cargo feature; the shell script shrinks to a `--remote` wrapper
-      (phase 10).
-- [ ] `make ch-host-install-test`: the stages as root in a Debian 13 container.
+      (phase 10). *2026-09-27:* `crates/banlieue-host` (39 unit tests against
+      an in-memory host as strict as the real one), feature `host` on by
+      default. On this project's own host, `install --dry-run` against what
+      the script had built found one real difference (it would have re-owned
+      polkit's `rules.d`; fixed) and otherwise only a newer unit comment. The
+      script keeps its steps and env file, translated to flags.
+- [x] `make ch-host-install-test`: the stages as root in a Debian 13 container.
+      *2026-09-27, passes:* packages through `apt-get`, a full install from
+      nothing with the real pinned downloads, a second install changing
+      nothing (6,219 paths, modes, owners and digests), the read-only verbs
+      writing nothing, `selftest` (guest uids through NSS, the provider's own
+      host checks, a real vTPM), and a corrupt artifact refused with the
+      release byte-identical. It found two bugs the unit tests could not: the
+      TLS client was built before `ca-certificates` existed, and the
+      self-test advances the EK CA's serial (now modelled, and documented).
 - [x] Test asserting the VMM pin equals ADR-0061's vendored-spec release.
       *2026-09-27:* `spec_tests.rs` ties the three together: the vendored
       spec's digest to `spec/PIN`, the pin to the client's version gate,

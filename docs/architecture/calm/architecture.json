@@ -470,7 +470,7 @@
       "unique-id": "network-cloud-hypervisor-host",
       "node-type": "network",
       "name": "Cloud Hypervisor KVM Host",
-      "description": "A bare-metal KVM host prepared by scripts/bootstrap-cloud-hypervisor-host.sh: the pinned VMM and CLOUDHV.fd firmware, the `banlieue` user, a guest uid range registered in /etc/userdb (one user and private group per guest), storage class directories (0711, per-guest 2770), root-owned template units for guests, vTPMs and image imports, a polkit rule limiting the provider to start/stop/reset-failed instances of those templates for uids in the guest range, and the provider's own sandboxed unit. One host is one Provider and one failure domain (ADR-0060)."
+      "description": "A bare-metal KVM host prepared by `banlieue host install` (ADR-0067; the script is now an SSH wrapper around it): the pinned VMM and CLOUDHV.fd firmware, the `banlieue` user, a guest uid range registered in /etc/userdb (one user and private group per guest), storage class directories (0711, per-guest 2770), root-owned template units for guests, vTPMs and image imports, a polkit rule limiting the provider to start/stop/reset-failed instances of those templates for uids in the guest range, and the provider's own sandboxed unit. One host is one Provider and one failure domain (ADR-0060)."
     },
     {
       "unique-id": "service-oci-registry",
@@ -503,6 +503,12 @@
           }
         }
       ]
+    },
+    {
+      "unique-id": "service-banlieue-host-installer",
+      "node-type": "service",
+      "name": "banlieue host (installer)",
+      "description": "`banlieue host {preflight,status,selftest,install}` (ADR-0067): the same banlieue binary, run once as root by an operator or a cloud-init payload, prepares a KVM host for the Cloud Hypervisor provider. Stages: packages (apt, opt-in), the sha256-pinned VMM and firmware (one pin, equal to the vendored REST spec's, ADR-0061), the banlieue user, guest uid records, directories and the host config (rendered from the provider's own HostConfig type), the per-host EK CA, the polkit rule, the template units and the provider unit. Read-only verbs cannot write by construction; install is idempotent and writes every file by temp-and-rename. Lives in the banlieue-host crate, which the provider crate does not depend on, so no reconcile path can reach it (ADR-0011). Never creates a bridge, has no SSH client, and exits when done: it is not a daemon."
     }
   ],
   "relationships": [
@@ -1286,6 +1292,38 @@
                 "framework": "NIST SP 800-53",
                 "control": "SI-10 Information Input Validation"
               }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "unique-id": "rel-host-installer-prepares-host",
+      "description": "The installer runs on the KVM host as root, once, and prepares everything the provider and its guests rely on; it then exits. It opens no socket and talks to no cluster; the host's credential is issued separately by `banlieue bootstrap cloud-hypervisor-host` (ADR-0060 Decision 5).",
+      "relationship-type": {
+        "deployed-in": {
+          "container": "network-cloud-hypervisor-host",
+          "nodes": [
+            "service-banlieue-host-installer"
+          ]
+        }
+      },
+      "controls": {
+        "host-installer-pinned-artifacts": {
+          "description": "VMM, ch-remote and firmware are installed only when their sha256 matches the constants in banlieue-host; on a mismatch nothing is installed and the previous symlinks are untouched (ADR-0067 Decision 4).",
+          "requirements": [
+            {
+              "requirement-url": "https://calm.finos.org/release/1.2/meta/control-requirement.json",
+              "config-url": "crates/banlieue-host"
+            }
+          ]
+        },
+        "host-installer-not-in-reconcile-path": {
+          "description": "The installer is a separate crate behind the binary's `host` feature; the provider crate does not depend on it, asserted by a test (ADR-0067 Decision 3).",
+          "requirements": [
+            {
+              "requirement-url": "https://calm.finos.org/release/1.2/meta/control-requirement.json",
+              "config-url": "crates/banlieue-host"
             }
           ]
         }
@@ -2302,6 +2340,7 @@
     "docs/adr/0062-cloudhypervisormachine-inframachine-contract.md",
     "docs/adr/0063-cloud-hypervisor-host-supervision.md",
     "docs/adr/0064-artifact-delivery-to-host-resident-providers.md",
-    "docs/adr/0065-cloud-hypervisor-vtpm-and-deferred-install.md"
+    "docs/adr/0065-cloud-hypervisor-vtpm-and-deferred-install.md",
+    "docs/adr/0067-banlieue-host-install-subcommand.md"
   ]
 }
