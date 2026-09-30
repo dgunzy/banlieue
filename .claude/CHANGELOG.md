@@ -1,5 +1,76 @@
 # Changelog
 
+## [2026-09-30] - ADR-0081/0082 and the sandbox security documentation
+
+**Author:** Erick Bourgeois
+
+### Added
+- `docs/adr/0081-kubernetes-orchestrates-vms-run-agents.md` (Accepted) and
+  `docs/adr/0082-no-inbound-to-sandboxes.md` (Proposed): the AgentSandbox
+  platform's ADR-0001 and ADR-0002, recorded here with banlieue numbers
+  (the repo already has its own 0001/0002, and roadmap 19 reserved 0076 to
+  0080). Substance unchanged; each gains an Origin note (T/K identifiers
+  refer to the platform threat model) and a short "What this means for
+  banlieue" section. Titles use `NNNN: Title`, following the no-em-dash
+  rule for new prose.
+- `docs/src/security/sandbox-boundary.md`: the security boundary statement
+  and where each of its guarantees is documented.
+- `docs/src/security/vsphere-least-privilege.md`: a custom vCenter role
+  derived from the calls in `client/vim.rs` and `import.rs`, with
+  assignment points. Unverified privileges are marked. States two scope
+  limits in today's code: clones are issued against the datacenter's root
+  VM folder, and `VSphereMachine.spec.resourcePool` is never used.
+- `docs/src/security/vtpm-per-provider.md`: how each provider creates a
+  per-VM vTPM and handles `installMode: Deferred`, and what is live-tested,
+  unit-tested, or unverified. Flags that a hand-built vSphere template with
+  a vTPM would pass it to every clone.
+- `docs/src/security/guest-configuration.md`: the no-secrets rule for guest
+  configuration, and every place rendered user data is copied in plaintext.
+- `docs/mkdocs.yml`: the four pages under Security.
+
+### Why
+Brief to align banlieue with the platform's ADR-0001 and ADR-0002. Part 1
+(documentation) only; the code investigations (items A to H) are reported
+separately and no code changed. No threat-model pass: neither ADR is
+implemented in banlieue yet.
+
+### Impact
+- [ ] Breaking change
+- [ ] Requires cluster rollout
+- [ ] Config change only
+- [x] Documentation only
+
+## [2026-09-30] - Roadmap 19: port groups
+
+**Author:** Erick Bourgeois
+
+### Added
+- `.github/community/19-port-groups.md`: a new roadmap for banlieue-managed
+  port groups. It adds a cluster-scoped `VMNetwork` (VLAN/trunk, MTU,
+  security policy, target Providers) that each provider realizes on its
+  backend: a vSphere distributed port group first, then a libvirt
+  `<network>`/`<portgroup>`, a Proxmox SDN VNet, and a Cloud Hypervisor
+  bridge VLAN. Network classes resolve through `vmNetworkRef` from
+  `VMNetwork.status`, and the literal `target` form stays for brownfield
+  port groups. Four security invariants: banlieue deletes only what it
+  created (ownership marker), no VLAN outside a per-Provider allowlist,
+  permissive security policy is never a default, and a port group in use is
+  never removed. Reserves ADR-0076 to ADR-0080.
+- `ROADMAPS.md`, `.github/community/README.md`: row 19, its reading-order
+  entry, and its place in the dependency graph.
+
+### Why
+Port groups are the last piece of backend topology still created by hand.
+ADR-0030 (per-zone names) and ADR-0032 (subnet on the network class) both
+work around that. Reachability (ADR-0019) matches names only, so it passes
+for a port group on the wrong VLAN.
+
+### Impact
+- [ ] Breaking change
+- [ ] Requires cluster rollout
+- [ ] Config change only
+- [x] Documentation only
+
 ## [2026-09-28 23:10] - Pools and claims: one claim one member; refill and GuestReady are event-driven
 
 **Author:** Erick Bourgeois
