@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-09-30T16:00:00.407Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-09-30T22:00:00.341Z
 > Files: 509 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -713,7 +713,7 @@
 
 - `.gitignore` — Git ignore rules (~37 tok)
 - `.python-version` (~2 tok)
-- `mkdocs.yml` — SPDX-License-Identifier: Apache-2.0 (~1906 tok)
+- `mkdocs.yml` — SPDX-License-Identifier: Apache-2.0 (~1978 tok)
 - `pyproject.toml` — Python project configuration (~257 tok)
 - `README.md` — Project documentation (~560 tok)
 
